@@ -1,0 +1,41 @@
+A high-quality 16-bit pixel art illustration in the style of a classic retro
+SNES / Prince of Persia era game (heavy pixel art aesthetic, chunky pixels,
+dithered gradients, bold saturated NES/SNES palette, NO smooth gradients, NO
+anti-aliasing except intentional pixel dithering).
+
+Scene: A large Norse Viking warrior — Leif Erikson — stands prominently on
+the stern of a Viking longship, silhouetted against a dramatic sunset sky.
+He wears a horned helmet, has a long braided red beard, chainmail under a
+fur-trimmed tunic, and a red cape flowing behind him. He raises a spear
+skyward and looks toward a distant new-world coastline (Vinland).
+
+The longship dominates the middle of the frame: a curved wooden hull with
+visible plank lines, a huge red-and-cream vertically striped square sail
+billowing with wind, thick rope rigging in multiple lines, seven round
+Viking shields with distinct heraldic patterns (star, cross, floral) hung
+along the gunwale in alternating red / yellow / blue, oars extending down
+into the water with foam splashes, and a fierce carved dragon-head prow on
+the right side with visible teeth and a golden eye.
+
+Background: On the right, a rocky new-world coast with layered mountains
+(atmospheric perspective — far mountains bluish-purple, mid mountains
+darker teal, near cliffs almost black-green), snow-capped peaks, dense
+conifer forest, a sandy beach and wooden pier extending into the water.
+
+Sky: Bold sunset gradient from deep indigo at the top through violet, pink,
+orange to gold at the horizon, with a bright sun over the water casting a
+pixelated shimmering reflection column. A few morning stars in the top
+band, small pixelated clouds with 3-tone shading, and a flock of dark
+seabirds silhouettes.
+
+Water: Choppy pixel-art sea with distinct wave crests, curl foam highlights,
+and a bright sun-glare column on the water below the sun.
+
+Frame: An ornate golden Celtic-knot decorative border wraps the entire
+scene, and at the bottom a dark navy caption banner reads exactly:
+"C. 1000        LEIF ERIKSON        NORSE REACH VINLAND"
+in golden pixel-font letters with tiny golden stars flanking the title.
+
+Overall: 16-bit era pixel art, richly detailed, warm heroic mood, cinematic
+composition, sharp pixel edges throughout, no photographic realism.
+Aspect ratio 16:9.
