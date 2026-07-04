@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>American History — 5 Mini Games</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <h1>American History <span class="accent">Mini Games</span></h1>
+    <p class="subtitle">Play, learn, and test yourself with 486 events across U.S. history.</p>
+    <nav class="game-nav" id="gameNav" aria-label="Game selection">
+      <button class="nav-btn active" data-view="home">Home</button>
+      <button class="nav-btn" data-view="timeline">1. Timeline Sort</button>
+      <button class="nav-btn" data-view="era">2. Era Match</button>
+      <button class="nav-btn" data-view="quiz">3. Trivia Quiz</button>
+      <button class="nav-btn" data-view="fill">4. Fill the Blank</button>
+      <button class="nav-btn" data-view="memory">5. Memory Match</button>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="view active" id="view-home">
+      <div class="hero">
+        <p class="lead">Pick a game to begin. Each round uses cards drawn from all 486 real events in the deck.</p>
+        <div class="game-grid">
+          <button class="game-card" data-view="timeline">
+            <div class="game-num">01</div>
+            <h2>Timeline Sort</h2>
+            <p>Drag five random events into chronological order.</p>
+          </button>
+          <button class="game-card" data-view="era">
+            <div class="game-num">02</div>
+            <h2>Era Match</h2>
+            <p>Read the event, then pick the era it belongs to.</p>
+          </button>
+          <button class="game-card" data-view="quiz">
+            <div class="game-num">03</div>
+            <h2>Trivia Quiz</h2>
+            <p>Ten multiple-choice questions built from marquee events.</p>
+          </button>
+          <button class="game-card" data-view="fill">
+            <div class="game-num">04</div>
+            <h2>Fill the Blank</h2>
+            <p>Complete famous phrases, nicknames, and quotes.</p>
+          </button>
+          <button class="game-card" data-view="memory">
+            <div class="game-num">05</div>
+            <h2>Memory Match</h2>
+            <p>Concentration: pair each year with its event.</p>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" id="view-timeline">
+      <div class="game-header">
+        <h2>Timeline Sort</h2>
+        <p class="game-desc">Reorder these events from earliest to latest. Drag or use the arrows.</p>
+      </div>
+      <div id="timelineBoard" class="timeline-board"></div>
+      <div class="game-controls">
+        <button class="btn primary" id="timelineCheck">Check order</button>
+        <button class="btn" id="timelineNext">New round</button>
+      </div>
+      <div id="timelineResult" class="result-panel" aria-live="polite"></div>
+      <div class="scoreboard">
+        <span>Score: <b id="timelineScore">0</b></span>
+        <span>Round: <b id="timelineRound">0</b></span>
+      </div>
+    </section>
+
+    <section class="view" id="view-era">
+      <div class="game-header">
+        <h2>Era Match</h2>
+        <p class="game-desc">Which historical era does this event belong to?</p>
+      </div>
+      <div class="prompt-card" id="eraPrompt"></div>
+      <div class="choice-grid" id="eraChoices"></div>
+      <div id="eraResult" class="result-panel" aria-live="polite"></div>
+      <div class="game-controls">
+        <button class="btn primary" id="eraNext" disabled>Next question</button>
+      </div>
+      <div class="scoreboard">
+        <span>Score: <b id="eraScore">0</b></span>
+        <span>Question: <b id="eraQ">0</b> / 10</span>
+      </div>
+    </section>
+
+    <section class="view" id="view-quiz">
+      <div class="game-header">
+        <h2>Trivia Quiz</h2>
+        <p class="game-desc">Ten questions drawn from the big-star events. Pick the year that matches.</p>
+      </div>
+      <div class="prompt-card" id="quizPrompt"></div>
+      <div class="choice-grid" id="quizChoices"></div>
+      <div id="quizResult" class="result-panel" aria-live="polite"></div>
+      <div class="game-controls">
+        <button class="btn primary" id="quizNext" disabled>Next question</button>
+      </div>
+      <div class="scoreboard">
+        <span>Score: <b id="quizScore">0</b></span>
+        <span>Question: <b id="quizQ">0</b> / 10</span>
+      </div>
+    </section>
+
+    <section class="view" id="view-fill">
+      <div class="game-header">
+        <h2>Fill the Blank</h2>
+        <p class="game-desc">Complete the famous phrase or nickname.</p>
+      </div>
+      <div class="prompt-card" id="fillPrompt"></div>
+      <div class="fill-input-row">
+        <input type="text" id="fillInput" placeholder="Type your answer…" autocomplete="off" spellcheck="false" />
+        <button class="btn primary" id="fillSubmit">Submit</button>
+      </div>
+      <div id="fillResult" class="result-panel" aria-live="polite"></div>
+      <div class="game-controls">
+        <button class="btn" id="fillNext" disabled>Next</button>
+        <button class="btn ghost" id="fillReveal">Give up</button>
+      </div>
+      <div class="scoreboard">
+        <span>Score: <b id="fillScore">0</b></span>
+        <span>Question: <b id="fillQ">0</b> / 10</span>
+      </div>
+    </section>
+
+    <section class="view" id="view-memory">
+      <div class="game-header">
+        <h2>Memory Match</h2>
+        <p class="game-desc">Flip two cards at a time. Match each year to its event.</p>
+      </div>
+      <div class="memory-grid" id="memoryBoard"></div>
+      <div class="game-controls">
+        <button class="btn primary" id="memoryReset">New board</button>
+      </div>
+      <div class="scoreboard">
+        <span>Matches: <b id="memoryMatches">0</b> / 8</span>
+        <span>Moves: <b id="memoryMoves">0</b></span>
+      </div>
+      <div id="memoryResult" class="result-panel" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <span>Data: 486 events across 10 eras</span>
+    <span>·</span>
+    <span id="loadStatus">Loading…</span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
