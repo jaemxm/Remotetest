@@ -30,6 +30,15 @@ const els = {
   avKeyStatus: $("av-key-status"),
   watchlistField: $("watchlist-field"),
   watchlistChips: $("watchlist-chips"),
+  hasPosition: $("has-position"),
+  positionInputs: $("position-inputs"),
+  entryPrice: $("entry-price"),
+  quantity: $("quantity"),
+  entryDate: $("entry-date"),
+  savePositionBtn: $("save-position-btn"),
+  positionStatus: $("position-status"),
+  pnlCard: $("pnl-card"),
+  pnlContent: $("pnl-content"),
   analyzeBtn: $("analyze-btn"),
   resultCard: $("result-card"),
   finalVerdict: $("final-verdict"),
@@ -47,6 +56,69 @@ const STORAGE_KEYS = { apiKey: "stocksignal.apiKey", model: "stocksignal.model" 
 var priceData = null;
 var newsData = null;
 var statsData = null;
+var positionData = null; // { entryPrice, quantity, entryDate }
+
+// ---------- Position tracking ----------
+const POS_STORAGE = "stocksignal.positions";
+function loadAllPositions() {
+  try { return JSON.parse(localStorage.getItem(POS_STORAGE)) || {}; } catch (_) { return {}; }
+}
+function loadPositionFor(ticker) {
+  const all = loadAllPositions();
+  const p = all[ticker?.toUpperCase()];
+  if (p) {
+    els.hasPosition.checked = true;
+    els.positionInputs.hidden = false;
+    els.entryPrice.value = p.entryPrice ?? "";
+    els.quantity.value = p.quantity ?? "";
+    els.entryDate.value = p.entryDate ?? "";
+    els.positionStatus.textContent = "저장된 포지션 자동 로드됨.";
+    positionData = { ...p };
+  } else {
+    els.hasPosition.checked = false;
+    els.positionInputs.hidden = true;
+    els.entryPrice.value = "";
+    els.quantity.value = "";
+    els.entryDate.value = "";
+    els.positionStatus.textContent = "";
+    positionData = null;
+  }
+}
+function savePositionFor(ticker) {
+  const t = (ticker || "").toUpperCase();
+  if (!t) { els.positionStatus.textContent = "먼저 티커를 입력하세요."; return; }
+  const entryPrice = parseFloat(els.entryPrice.value);
+  if (isNaN(entryPrice) || entryPrice <= 0) { els.positionStatus.textContent = "유효한 매수가를 입력하세요."; return; }
+  const p = {
+    entryPrice,
+    quantity: els.quantity.value ? parseFloat(els.quantity.value) : undefined,
+    entryDate: els.entryDate.value || undefined,
+  };
+  const all = loadAllPositions();
+  all[t] = p;
+  localStorage.setItem(POS_STORAGE, JSON.stringify(all));
+  positionData = p;
+  els.positionStatus.textContent = `${t} 포지션 저장 완료.`;
+  if (priceData) renderPnL(priceData, statsData);
+}
+els.hasPosition.addEventListener("change", () => {
+  els.positionInputs.hidden = !els.hasPosition.checked;
+  if (!els.hasPosition.checked) {
+    // Delete saved position
+    const t = els.ticker.value.trim().toUpperCase();
+    if (t) {
+      const all = loadAllPositions();
+      delete all[t];
+      localStorage.setItem(POS_STORAGE, JSON.stringify(all));
+    }
+    positionData = null;
+    els.pnlCard.hidden = true;
+  }
+});
+els.savePositionBtn.addEventListener("click", () => savePositionFor(els.ticker.value.trim()));
+els.ticker.addEventListener("input", () => {
+  loadPositionFor(els.ticker.value.trim());
+});
 
 // ---------- API key handling ----------
 function loadKey() {
@@ -246,6 +318,8 @@ els.fetchBtn.addEventListener("click", async () => {
   try {
     priceData = await fetchYahoo(t, els.range.value);
     pushWatchlist(t);
+    loadPositionFor(t);
+    renderPnL(priceData, statsData);
     els.priceStatus.textContent = `조회 성공 (${priceData.prices.length}일)`;
     els.priceSummary.textContent = formatPriceSummary(priceData);
     els.pricePreview.hidden = false;
@@ -269,6 +343,7 @@ els.fetchBtn.addEventListener("click", async () => {
       statsData = statsResult.value;
       if (statsData?.fiftyTwoWeekHigh) priceData.meta.fiftyTwoWeekHigh = statsData.fiftyTwoWeekHigh;
       if (statsData?.fiftyTwoWeekLow) priceData.meta.fiftyTwoWeekLow = statsData.fiftyTwoWeekLow;
+      renderPnL(priceData, statsData);
     }
     renderStats(priceData, statsData, statsResult.status === "rejected" ? statsResult.reason?.message : null);
 
@@ -394,6 +469,66 @@ function renderStats(price, stats, errMsg) {
   } else {
     els.statsStatus.textContent = "가격 메타 지표";
   }
+}
+
+// ---------- P&L rendering ----------
+function computePnL(priceData, position, statsData) {
+  if (!position || !position.entryPrice) return null;
+  const current = priceData?.meta?.regularMarketPrice ?? priceData?.prices?.[priceData.prices.length - 1]?.close;
+  if (!current) return null;
+  const entry = position.entryPrice;
+  const pnlPct = ((current - entry) / entry) * 100;
+  const pnlAbs = current - entry;
+  const totalPnl = position.quantity ? pnlAbs * position.quantity : null;
+  const target = statsData?.targetMean;
+  const remainingToTarget = target ? ((target - current) / current) * 100 : null;
+  let daysHeld = null;
+  if (position.entryDate) {
+    const ms = Date.now() - new Date(position.entryDate).getTime();
+    daysHeld = Math.floor(ms / 86400000);
+  }
+  return { current, entry, pnlPct, pnlAbs, totalPnl, target, remainingToTarget, daysHeld };
+}
+
+function renderPnL(priceData, statsData) {
+  if (!positionData || !positionData.entryPrice) { els.pnlCard.hidden = true; return; }
+  const pnl = computePnL(priceData, positionData, statsData);
+  if (!pnl) { els.pnlCard.hidden = true; return; }
+  els.pnlCard.hidden = false;
+  const cls = pnl.pnlPct >= 0 ? "up" : "down";
+  const arrow = pnl.pnlPct >= 0 ? "▲" : "▼";
+  const totalLine = pnl.totalPnl != null
+    ? `<div class="pnl-row"><span>총 손익</span><span class="${cls}">${pnl.totalPnl >= 0 ? "+" : ""}${pnl.totalPnl.toFixed(2)} ${priceData.currency || "USD"} (${positionData.quantity}주)</span></div>`
+    : "";
+  const daysLine = pnl.daysHeld != null
+    ? `<div class="pnl-row"><span>보유 기간</span><span>${pnl.daysHeld}일</span></div>`
+    : "";
+  const targetLine = pnl.remainingToTarget != null
+    ? `<div class="pnl-row"><span>목표주가 여력</span><span class="${pnl.remainingToTarget >= 0 ? "up" : "down"}">${pnl.remainingToTarget >= 0 ? "+" : ""}${pnl.remainingToTarget.toFixed(1)}% (목표: ${pnl.target.toFixed(2)})</span></div>`
+    : "";
+
+  // Stop-loss / take-profit hints
+  let hintLine = "";
+  if (pnl.pnlPct <= -10) {
+    hintLine = `<div class="pnl-hint danger">⚠️ 손실 -${Math.abs(pnl.pnlPct).toFixed(1)}% — 손절선(-10 ~ -15%) 근처. 매도 신호 지속 시 손절 검토 권장.</div>`;
+  } else if (pnl.pnlPct >= 20) {
+    hintLine = `<div class="pnl-hint success">💰 수익 +${pnl.pnlPct.toFixed(1)}% — 익절선 근접. 매도 신호 발생 시 부분 익절 고려.</div>`;
+  }
+
+  els.pnlContent.innerHTML = `
+    <div class="pnl-big ${cls}">
+      <span class="pnl-arrow">${arrow}</span>
+      <span class="pnl-pct">${pnl.pnlPct >= 0 ? "+" : ""}${pnl.pnlPct.toFixed(2)}%</span>
+      <span class="pnl-abs">${pnl.pnlAbs >= 0 ? "+" : ""}${pnl.pnlAbs.toFixed(2)}</span>
+    </div>
+    <div class="pnl-rows">
+      <div class="pnl-row"><span>매수가 → 현재가</span><span>${pnl.entry.toFixed(2)} → ${pnl.current.toFixed(2)}</span></div>
+      ${totalLine}
+      ${daysLine}
+      ${targetLine}
+    </div>
+    ${hintLine}
+  `;
 }
 
 // ---------- News list rendering ----------
@@ -905,6 +1040,31 @@ function signalLabelKo(sig) {
   return { BUY: "매수", SELL: "매도", HOLD: "홀드" }[sig] || sig;
 }
 
+function positionAction(signal, pnl) {
+  if (!pnl) {
+    if (signal === "BUY") return { label: "진입 검토", kind: "buy", desc: "미보유 상태에서 매수 신호가 우세하니 진입을 검토하세요." };
+    if (signal === "SELL") return { label: "관망 / 매수 회피", kind: "hold", desc: "미보유 상태이므로 '매도'라기보단 진입 회피가 적절합니다." };
+    return { label: "관망", kind: "hold", desc: "방향성이 뚜렷하지 않으니 진입 없이 관망하세요." };
+  }
+  const pct = pnl.pnlPct;
+  if (signal === "SELL") {
+    if (pct >= 20) return { label: "익절 강력 권장", kind: "sell", desc: `수익 +${pct.toFixed(1)}% 상태에서 매도 신호가 발생. 부분 or 전량 익절 강력 권고.` };
+    if (pct >= 5) return { label: "익절", kind: "sell", desc: `수익 +${pct.toFixed(1)}% 확보 중이며 매도 신호가 발생. 익절 권장.` };
+    if (pct >= -3) return { label: "매도 검토", kind: "sell", desc: `현재 손익 ${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%이나 매도 신호가 우세. 손실 확대 방지 차원에서 매도 검토.` };
+    if (pct >= -10) return { label: "매도 or 손절 검토", kind: "sell", desc: `-${Math.abs(pct).toFixed(1)}% 손실 중이며 매도 신호까지 나옴. 추가 하락 가능성 대비해 손절 검토.` };
+    return { label: "손절 검토", kind: "sell", desc: `-${Math.abs(pct).toFixed(1)}%의 큰 손실이며 매도 신호 지속. 손절선 설정 후 실행 검토 권장.` };
+  }
+  if (signal === "BUY") {
+    if (pct >= 25) return { label: "익절 후 재진입", kind: "hold", desc: `수익 +${pct.toFixed(1)}% 확보 중이며 매수 신호 지속. 부분 익절 후 조정 시 재진입 전략도 고려 가능.` };
+    if (pct >= 0) return { label: "보유 (추가매수 조건부)", kind: "buy", desc: `수익 +${pct.toFixed(1)}% 상태에서 매수 신호 유지. 신뢰도 매우 높을 때만 추가매수, 그 외엔 보유.` };
+    return { label: "보유 (반등 대기)", kind: "buy", desc: `${pct.toFixed(1)}% 손실 중이지만 매수 신호가 강해 반등 여지 있음. 손절보다 보유 유지 or 추가매수(평단 낮추기) 검토.` };
+  }
+  // HOLD
+  if (pct >= 20) return { label: "보유 (익절 시점 관망)", kind: "hold", desc: `수익 +${pct.toFixed(1)}% 확보 중, 신호는 홀드. 매도 신호 전환 시 부분 익절 준비.` };
+  if (pct <= -10) return { label: "보유 (손절선 관찰)", kind: "hold", desc: `-${Math.abs(pct).toFixed(1)}% 손실 중, 신호 홀드. 손절선 설정하고 매도 신호 전환 시 대응.` };
+  return { label: "보유", kind: "hold", desc: `현재 손익 ${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%, 신호 홀드. 유의미한 신호 변화 시까지 보유 유지.` };
+}
+
 function generateRuleSummary(tickerLabel, ruleResult, positive, negative) {
   const signal = ruleResult.signal;
   const conf = ruleResult.confidence;
@@ -971,10 +1131,18 @@ function renderResults(ruleResult, claudeResult, finalResult) {
 
   // Natural-language reasoning summary
   const tickerLabel = priceData?.ticker || "이 종목";
+  const pnl = computePnL(priceData, positionData, statsData);
+  const posAction = positionAction(finalResult.signal, pnl);
   const narrativeSummary = claudeResult?.reasoning
     ? claudeResult.reasoning
     : generateRuleSummary(tickerLabel, ruleResult, positive, negative);
   const summarySource = claudeResult?.reasoning ? "Claude AI" : "규칙 엔진";
+  const positionBlock = `
+    <div class="position-action ${posAction.kind}">
+      <div class="pa-label">내 액션 (${pnl ? "보유 중" : "미보유"})</div>
+      <div class="pa-title">${escapeHtml(posAction.label)}</div>
+      <div class="pa-desc">${escapeHtml(posAction.desc)}</div>
+    </div>`;
 
   els.finalVerdict.innerHTML = `
     <div class="label">최종 판단</div>
@@ -983,6 +1151,7 @@ function renderResults(ruleResult, claudeResult, finalResult) {
       <span class="conf-label">신뢰도 ${confPct}%</span>
       <div class="conf-bar"><div class="conf-bar-fill ${sigClass}" style="width:${confPct}%"></div></div>
     </div>
+    ${positionBlock}
     <div class="verdict-narrative">
       <h4>📝 판단 근거 요약 <span class="narrative-source">${escapeHtml(summarySource)}</span></h4>
       <p>${escapeHtml(narrativeSummary)}</p>

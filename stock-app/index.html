@@ -57,6 +57,36 @@
         </div>
       </div>
 
+      <div class="field" id="position-card">
+        <label>
+          <input type="checkbox" id="has-position" style="vertical-align: middle; margin-right: 6px" />
+          이 종목을 보유 중입니다 (매도/익절/손절 판단에 반영)
+        </label>
+        <div id="position-inputs" hidden>
+          <div class="row" style="margin-top: 8px">
+            <div style="flex: 1 1 130px; min-width: 0">
+              <label class="sublabel" for="entry-price">매수가</label>
+              <input id="entry-price" type="number" step="any" placeholder="150.00" />
+            </div>
+            <div style="flex: 1 1 100px; min-width: 0">
+              <label class="sublabel" for="quantity">수량 (선택)</label>
+              <input id="quantity" type="number" step="any" placeholder="10" />
+            </div>
+            <div style="flex: 1 1 140px; min-width: 0">
+              <label class="sublabel" for="entry-date">매수일 (선택)</label>
+              <input id="entry-date" type="date" />
+            </div>
+            <button id="save-position-btn" type="button" class="secondary" style="align-self: flex-end">저장</button>
+          </div>
+          <p class="hint" id="position-status"></p>
+        </div>
+      </div>
+
+      <div class="field" id="pnl-card" hidden>
+        <label>내 포지션 P&amp;L</label>
+        <div id="pnl-content" class="pnl-content"></div>
+      </div>
+
       <div class="field" id="stats-card" hidden>
         <label>핵심 지표 (자동 조회)</label>
         <div class="news-status" id="stats-status"></div>

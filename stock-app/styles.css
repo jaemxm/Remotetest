@@ -552,3 +552,81 @@ details[open] summary { margin-bottom: 8px; }
   line-height: 1.65;
   color: var(--text);
 }
+
+.sublabel {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 3px;
+}
+
+.pnl-content {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+.pnl-big {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-weight: 700;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+.pnl-big.up { color: var(--buy); }
+.pnl-big.down { color: var(--sell); }
+.pnl-big .pnl-arrow { font-size: 20px; }
+.pnl-big .pnl-pct { font-size: 26px; letter-spacing: -0.02em; }
+.pnl-big .pnl-abs { font-size: 14px; opacity: 0.85; }
+.pnl-rows { display: flex; flex-direction: column; gap: 4px; }
+.pnl-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+.pnl-row .up { color: var(--buy); font-weight: 600; }
+.pnl-row .down { color: var(--sell); font-weight: 600; }
+.pnl-hint {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12.5px;
+}
+.pnl-hint.danger { background: rgba(255, 59, 48, 0.10); color: var(--sell); border: 1px solid rgba(255, 59, 48, 0.3); }
+.pnl-hint.success { background: rgba(0, 200, 83, 0.10); color: var(--buy); border: 1px solid rgba(0, 200, 83, 0.3); }
+
+.position-action {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin: 14px 0 6px;
+  text-align: left;
+  border-left: 4px solid var(--muted);
+}
+.position-action.buy { border-left-color: var(--buy); }
+.position-action.sell { border-left-color: var(--sell); }
+.position-action.hold { border-left-color: var(--hold); }
+.position-action .pa-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.position-action .pa-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 4px 0 6px;
+}
+.position-action.buy .pa-title { color: var(--buy); }
+.position-action.sell .pa-title { color: var(--sell); }
+.position-action.hold .pa-title { color: var(--hold); }
+.position-action .pa-desc {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text);
+}
