@@ -10,6 +10,14 @@ const els = {
   priceStatus: $("price-status"),
   pricePreview: $("price-preview"),
   priceSummary: $("price-summary"),
+  chartContainer: $("chart-container"),
+  priceChart: $("price-chart"),
+  autoNews: $("auto-news"),
+  newsList: $("news-list"),
+  newsAutoStatus: $("news-auto-status"),
+  statsCard: $("stats-card"),
+  statsGrid: $("stats-grid"),
+  statsStatus: $("stats-status"),
   news: $("news"),
   apiKey: $("api-key"),
   model: $("model"),
@@ -29,8 +37,10 @@ const els = {
 
 const STORAGE_KEYS = { apiKey: "stocksignal.apiKey", model: "stocksignal.model" };
 
-// State
-let priceData = null;
+// State (var so headless tests can seed via window.*)
+var priceData = null;
+var newsData = null;
+var statsData = null;
 
 // ---------- API key handling ----------
 function loadKey() {
@@ -72,22 +82,112 @@ async function fetchYahoo(ticker, range) {
       const json = await resp.json();
       const result = json?.chart?.result?.[0];
       if (!result) throw new Error("응답에 데이터가 없습니다.");
-      const closes = result.indicators?.quote?.[0]?.close;
+      const quote = result.indicators?.quote?.[0];
       const timestamps = result.timestamp;
-      if (!closes || !timestamps) throw new Error("가격 시계열이 비어 있습니다.");
+      if (!quote || !timestamps) throw new Error("가격 시계열이 비어 있습니다.");
+      const { open: opens, high: highs, low: lows, close: closes } = quote;
       const pairs = timestamps
-        .map((t, i) => ({ date: new Date(t * 1000), close: closes[i] }))
-        .filter((p) => typeof p.close === "number" && !isNaN(p.close));
+        .map((t, i) => ({
+          date: new Date(t * 1000),
+          open: opens?.[i],
+          high: highs?.[i],
+          low: lows?.[i],
+          close: closes?.[i],
+        }))
+        .filter((p) => ["open", "high", "low", "close"].every(
+          (k) => typeof p[k] === "number" && !isNaN(p[k])
+        ));
       if (pairs.length < 5) throw new Error("가격 데이터가 부족합니다.");
+      const m = result.meta || {};
       return {
-        ticker: result.meta?.symbol || ticker,
-        currency: result.meta?.currency || "",
-        exchange: result.meta?.exchangeName || "",
+        ticker: m.symbol || ticker,
+        currency: m.currency || "",
+        exchange: m.exchangeName || "",
         prices: pairs,
+        meta: {
+          regularMarketPrice: m.regularMarketPrice,
+          previousClose: m.chartPreviousClose ?? m.previousClose,
+          dayHigh: m.regularMarketDayHigh,
+          dayLow: m.regularMarketDayLow,
+          dayVolume: m.regularMarketVolume,
+          fiftyTwoWeekHigh: m.fiftyTwoWeekHigh,
+          fiftyTwoWeekLow: m.fiftyTwoWeekLow,
+        },
       };
     } catch (e) { lastErr = e; }
   }
   throw lastErr || new Error("가격 조회 실패");
+}
+
+async function fetchStats(ticker) {
+  const modules = "summaryDetail,defaultKeyStatistics,financialData,price,recommendationTrend";
+  const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=${modules}`;
+  const tryUrls = [
+    url,
+    `https://corsproxy.io/?${encodeURIComponent(url)}`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  ];
+  let lastErr = null;
+  for (const u of tryUrls) {
+    try {
+      const resp = await fetch(u);
+      if (!resp.ok) { lastErr = new Error(`HTTP ${resp.status}`); continue; }
+      const json = await resp.json();
+      const r = json?.quoteSummary?.result?.[0];
+      if (!r) { lastErr = new Error("빈 응답"); continue; }
+      const sd = r.summaryDetail || {};
+      const ks = r.defaultKeyStatistics || {};
+      const fd = r.financialData || {};
+      const pr = r.price || {};
+      const rt = r.recommendationTrend?.trend?.[0] || {};
+      const g = (obj, key) => obj?.[key]?.raw ?? (typeof obj?.[key] === "number" ? obj[key] : undefined);
+      return {
+        marketCap: g(pr, "marketCap") ?? g(sd, "marketCap"),
+        trailingPE: g(sd, "trailingPE") ?? g(ks, "trailingPE"),
+        forwardPE: g(sd, "forwardPE") ?? g(ks, "forwardPE"),
+        trailingEPS: g(ks, "trailingEps"),
+        forwardEPS: g(ks, "forwardEps"),
+        dividendYield: g(sd, "dividendYield"),
+        beta: g(ks, "beta") ?? g(sd, "beta"),
+        targetMean: g(fd, "targetMeanPrice"),
+        targetHigh: g(fd, "targetHighPrice"),
+        targetLow: g(fd, "targetLowPrice"),
+        recommendationMean: g(fd, "recommendationMean"),
+        recommendationKey: fd?.recommendationKey,
+        numAnalysts: g(fd, "numberOfAnalystOpinions"),
+        analystBuy: rt.strongBuy != null ? (rt.strongBuy + (rt.buy || 0)) : undefined,
+        analystHold: rt.hold,
+        analystSell: rt.sell != null ? (rt.sell + (rt.strongSell || 0)) : undefined,
+      };
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr || new Error("스탯 조회 실패");
+}
+
+async function fetchNews(ticker) {
+  const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(ticker)}&newsCount=15&quotesCount=0&enableFuzzyQuery=false`;
+  const tryUrls = [
+    url,
+    `https://corsproxy.io/?${encodeURIComponent(url)}`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  ];
+  let lastErr = null;
+  for (const u of tryUrls) {
+    try {
+      const resp = await fetch(u);
+      if (!resp.ok) { lastErr = new Error(`HTTP ${resp.status}`); continue; }
+      const json = await resp.json();
+      const items = (json?.news || []).map((n) => ({
+        title: String(n.title || "").trim(),
+        publisher: String(n.publisher || "").trim(),
+        link: String(n.link || "").trim(),
+        time: n.providerPublishTime ? new Date(n.providerPublishTime * 1000) : null,
+        summary: String(n.summary || "").trim(),
+      })).filter((n) => n.title);
+      return items;
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr || new Error("뉴스 조회 실패");
 }
 
 function formatPriceSummary(data) {
@@ -118,14 +218,285 @@ els.fetchBtn.addEventListener("click", async () => {
     els.priceStatus.textContent = `조회 성공 (${priceData.prices.length}일)`;
     els.priceSummary.textContent = formatPriceSummary(priceData);
     els.pricePreview.hidden = false;
+    renderPriceChart(priceData);
+    els.chartContainer.hidden = false;
+
+    // Stats + News in parallel
+    newsData = null;
+    statsData = null;
+    els.autoNews.hidden = false;
+    els.newsAutoStatus.textContent = "뉴스 조회 중…";
+    els.newsList.innerHTML = "";
+    els.statsCard.hidden = false;
+    els.statsStatus.textContent = "핵심 지표 조회 중…";
+    els.statsGrid.innerHTML = "";
+
+    const [newsResult, statsResult] = await Promise.allSettled([
+      fetchNews(t),
+      fetchStats(t),
+    ]);
+    if (newsResult.status === "fulfilled") {
+      newsData = newsResult.value;
+      renderNewsList(newsData);
+    } else {
+      els.newsAutoStatus.innerHTML = `<span class="error">뉴스 자동 조회 실패: ${escapeHtml(newsResult.reason?.message || "")}. 아래 텍스트 박스에 수동 입력 가능.</span>`;
+    }
+    if (statsResult.status === "fulfilled") {
+      statsData = statsResult.value;
+    }
+    renderStats(priceData, statsData, statsResult.status === "rejected" ? statsResult.reason?.message : null);
   } catch (e) {
     priceData = null;
     els.priceStatus.innerHTML = `<span class="error">가격 조회 실패: ${escapeHtml(e.message)}. 티커를 확인하거나 잠시 후 다시 시도하세요.</span>`;
     els.pricePreview.hidden = true;
+    els.chartContainer.hidden = true;
+    els.autoNews.hidden = true;
+    els.statsCard.hidden = true;
   } finally {
     els.fetchBtn.disabled = false;
   }
 });
+
+// ---------- Stats rendering ----------
+function fmtNum(v, digits = 2) {
+  if (v == null || isNaN(v)) return "N/A";
+  if (Math.abs(v) >= 1e12) return (v / 1e12).toFixed(digits) + "T";
+  if (Math.abs(v) >= 1e9) return (v / 1e9).toFixed(digits) + "B";
+  if (Math.abs(v) >= 1e6) return (v / 1e6).toFixed(digits) + "M";
+  if (Math.abs(v) >= 1e3) return (v / 1e3).toFixed(digits) + "K";
+  return Number(v).toFixed(digits);
+}
+function fmtPct(v, digits = 2) {
+  return v == null || isNaN(v) ? "N/A" : (v * 100).toFixed(digits) + "%";
+}
+function fmtPrice(v) { return v == null || isNaN(v) ? "N/A" : Number(v).toFixed(2); }
+
+function recLabel(key) {
+  return { strong_buy: "적극 매수", buy: "매수", hold: "홀드", sell: "매도", strong_sell: "적극 매도" }[key] || key || "N/A";
+}
+
+function renderStats(price, stats, errMsg) {
+  const meta = price?.meta || {};
+  const last = price?.prices?.[price.prices.length - 1]?.close;
+  const cells = [];
+  const push = (label, value, hint = "") =>
+    cells.push(`<div class="stat"><div class="stat-label">${escapeHtml(label)}</div><div class="stat-value">${value}</div>${hint ? `<div class="stat-hint">${escapeHtml(hint)}</div>` : ""}</div>`);
+
+  // From price meta (always available)
+  push("현재가", fmtPrice(meta.regularMarketPrice ?? last), price?.currency || "");
+  push("전일 종가", fmtPrice(meta.previousClose));
+  if (meta.regularMarketPrice != null && meta.previousClose) {
+    const d = meta.regularMarketPrice - meta.previousClose;
+    const pct = (d / meta.previousClose) * 100;
+    const cls = d >= 0 ? "up" : "down";
+    push("전일 대비", `<span class="${cls}">${d >= 0 ? "+" : ""}${d.toFixed(2)} (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%)</span>`);
+  }
+  push("당일 고/저", `${fmtPrice(meta.dayHigh)} / ${fmtPrice(meta.dayLow)}`);
+  push("당일 거래량", fmtNum(meta.dayVolume, 1));
+  if (meta.fiftyTwoWeekHigh && meta.fiftyTwoWeekLow) {
+    push("52주 고/저", `${fmtPrice(meta.fiftyTwoWeekHigh)} / ${fmtPrice(meta.fiftyTwoWeekLow)}`);
+    const cur = meta.regularMarketPrice ?? last;
+    if (cur != null) {
+      const range = meta.fiftyTwoWeekHigh - meta.fiftyTwoWeekLow;
+      const pos = range > 0 ? ((cur - meta.fiftyTwoWeekLow) / range) * 100 : 50;
+      push("52주 위치", `${pos.toFixed(0)}%`, pos > 80 ? "고점 근접" : pos < 20 ? "저점 근접" : "중립");
+    }
+  }
+
+  // From quoteSummary if available
+  if (stats) {
+    if (stats.marketCap != null) push("시가총액", "$" + fmtNum(stats.marketCap, 2));
+    if (stats.trailingPE != null) push("PER (TTM)", stats.trailingPE.toFixed(2), "주가수익비율");
+    if (stats.forwardPE != null) push("PER (Fwd)", stats.forwardPE.toFixed(2));
+    if (stats.trailingEPS != null) push("EPS (TTM)", stats.trailingEPS.toFixed(2));
+    if (stats.dividendYield != null) push("배당수익률", fmtPct(stats.dividendYield));
+    if (stats.beta != null) push("베타", stats.beta.toFixed(2));
+    if (stats.targetMean != null) {
+      const cur = meta.regularMarketPrice ?? last;
+      let hint = "";
+      if (cur) {
+        const gap = ((stats.targetMean - cur) / cur) * 100;
+        hint = `현재가 대비 ${gap >= 0 ? "+" : ""}${gap.toFixed(1)}%`;
+      }
+      push("목표주가 (평균)", fmtPrice(stats.targetMean), hint);
+    }
+    if (stats.recommendationKey) {
+      push("애널리스트 의견", recLabel(stats.recommendationKey), stats.numAnalysts ? `${stats.numAnalysts}명` : "");
+    }
+  }
+
+  els.statsGrid.innerHTML = cells.join("");
+  if (stats) {
+    els.statsStatus.textContent = "가격 메타 + 펀더멘털 지표";
+  } else if (errMsg) {
+    els.statsStatus.innerHTML = `가격 메타만 표시 <span class="hint">(펀더멘털 조회 실패: ${escapeHtml(errMsg.slice(0, 80))})</span>`;
+  } else {
+    els.statsStatus.textContent = "가격 메타 지표";
+  }
+}
+
+// ---------- News list rendering ----------
+function renderNewsList(items) {
+  if (!items || !items.length) {
+    els.newsAutoStatus.textContent = "관련 뉴스가 없습니다.";
+    els.newsList.innerHTML = "";
+    return;
+  }
+  els.newsAutoStatus.textContent = `${items.length}개의 헤드라인 (감성 분석에 자동 반영됨)`;
+  els.newsList.innerHTML = items.slice(0, 12).map((n) => {
+    const dateStr = n.time ? n.time.toISOString().slice(0, 10) : "";
+    const meta = [n.publisher, dateStr].filter(Boolean).join(" · ");
+    const linkOpen = n.link ? `<a href="${escapeHtml(n.link)}" target="_blank" rel="noopener">` : "<span>";
+    const linkClose = n.link ? "</a>" : "</span>";
+    return `<li>${linkOpen}${escapeHtml(n.title)}${linkClose}${meta ? `<span class="news-meta">${escapeHtml(meta)}</span>` : ""}</li>`;
+  }).join("");
+}
+
+function combineNewsText(autoNews, manualText) {
+  const auto = (autoNews || [])
+    .map((n) => n.summary ? `${n.title} — ${n.summary}` : n.title)
+    .join("\n");
+  const manual = (manualText || "").trim();
+  return [auto, manual].filter(Boolean).join("\n\n");
+}
+
+// ---------- Chart rendering (inline SVG, no dependency) ----------
+function renderPriceChart(data) {
+  const closes = data.prices.map((p) => p.close);
+  const dates = data.prices.map((p) => p.date);
+  const n = closes.length;
+  if (n < 2) { els.priceChart.innerHTML = ""; return; }
+
+  // Layout (matches viewBox="0 0 800 360" in index.html)
+  const W = 800, H = 360;
+  const padL = 48, padR = 12;
+  const priceTop = 16, priceBottom = 246;
+  const rsiTop = 268, rsiBottom = 336;
+  const innerW = W - padL - padR;
+  const priceInnerH = priceBottom - priceTop;
+  const rsiInnerH = rsiBottom - rsiTop;
+
+  // Price scale (with 5% padding)
+  const rawMin = Math.min(...closes);
+  const rawMax = Math.max(...closes);
+  const rawSpan = rawMax - rawMin || Math.abs(rawMax) * 0.02 || 1;
+  const pad = rawSpan * 0.05;
+  const yMin = rawMin - pad;
+  const yMax = rawMax + pad;
+
+  const xAt = (i) => padL + (i / (n - 1)) * innerW;
+  const yAt = (v) => priceTop + (1 - (v - yMin) / (yMax - yMin)) * priceInnerH;
+  const rsiY = (v) => rsiTop + (1 - v / 100) * rsiInnerH;
+
+  // Rolling SMA
+  const rollingSMA = (period) => {
+    const out = [];
+    if (n < period) return out;
+    let sum = 0;
+    for (let i = 0; i < period; i++) sum += closes[i];
+    out.push({ i: period - 1, v: sum / period });
+    for (let i = period; i < n; i++) {
+      sum += closes[i] - closes[i - period];
+      out.push({ i, v: sum / period });
+    }
+    return out;
+  };
+  const sma20Pts = rollingSMA(20);
+  const sma50Pts = rollingSMA(50);
+
+  // Rolling RSI(14) using Wilder-lite: same window each step
+  const rsiPts = [];
+  const rsiPeriod = 14;
+  if (n > rsiPeriod) {
+    for (let i = rsiPeriod; i < n; i++) {
+      let gains = 0, losses = 0;
+      for (let j = i - rsiPeriod + 1; j <= i; j++) {
+        const d = closes[j] - closes[j - 1];
+        if (d >= 0) gains += d; else losses -= d;
+      }
+      const rsi = losses === 0 ? 100 : 100 - 100 / (1 + (gains / rsiPeriod) / (losses / rsiPeriod));
+      rsiPts.push({ i, v: rsi });
+    }
+  }
+
+  const toPath = (pts, yFn) => pts
+    .map((p, k) => `${k === 0 ? "M" : "L"} ${xAt(p.i).toFixed(1)} ${yFn(p.v).toFixed(1)}`)
+    .join(" ");
+  const priceLine = closes
+    .map((v, i) => `${i === 0 ? "M" : "L"} ${xAt(i).toFixed(1)} ${yAt(v).toFixed(1)}`)
+    .join(" ");
+  const sma20Path = toPath(sma20Pts, yAt);
+  const sma50Path = toPath(sma50Pts, yAt);
+  const rsiPath = toPath(rsiPts, rsiY);
+
+  // Price grid + Y labels (5 rows)
+  let priceGrid = "";
+  for (let k = 0; k <= 4; k++) {
+    const v = yMin + ((yMax - yMin) * (4 - k)) / 4;
+    const y = yAt(v).toFixed(1);
+    priceGrid += `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" class="grid" />`;
+    priceGrid += `<text x="${padL - 6}" y="${y}" class="y-label" text-anchor="end" dominant-baseline="middle">${v.toFixed(2)}</text>`;
+  }
+
+  // RSI reference lines (30 / 50 dashed / 70)
+  let rsiRefs = "";
+  for (const [v, cls] of [[30, "ref"], [50, "ref"], [70, "ref"]]) {
+    rsiRefs += `<line x1="${padL}" y1="${rsiY(v).toFixed(1)}" x2="${W - padR}" y2="${rsiY(v).toFixed(1)}" class="grid ${cls}" />`;
+  }
+  let rsiLabels = "";
+  for (const v of [30, 70]) {
+    rsiLabels += `<text x="${padL - 6}" y="${rsiY(v).toFixed(1)}" class="y-label" text-anchor="end" dominant-baseline="middle">${v}</text>`;
+  }
+
+  // X labels (5 evenly spaced dates)
+  let xLabels = "";
+  const fmt = (d) => `${d.getMonth() + 1}/${d.getDate()}`;
+  for (let k = 0; k <= 4; k++) {
+    const i = Math.round(((n - 1) * k) / 4);
+    const x = xAt(i).toFixed(1);
+    xLabels += `<text x="${x}" y="${rsiBottom + 14}" class="x-label" text-anchor="middle">${fmt(dates[i])}</text>`;
+  }
+
+  // Last-point marker
+  const lastX = xAt(n - 1).toFixed(1);
+  const lastY = yAt(closes[n - 1]).toFixed(1);
+
+  // Candlesticks
+  const candleGap = 1.5;
+  const candleAvail = innerW / n;
+  const candleW = Math.max(1.5, Math.min(candleAvail - candleGap, 10));
+  let candles = "";
+  for (let i = 0; i < n; i++) {
+    const p = data.prices[i];
+    const cx = xAt(i);
+    const bull = p.close >= p.open;
+    const cls = bull ? "candle-bull" : "candle-bear";
+    const bodyTop = yAt(Math.max(p.open, p.close));
+    const bodyBot = yAt(Math.min(p.open, p.close));
+    const bodyH = Math.max(1, bodyBot - bodyTop);
+    const wickTop = yAt(p.high);
+    const wickBot = yAt(p.low);
+    candles +=
+      `<line x1="${cx.toFixed(1)}" y1="${wickTop.toFixed(1)}" x2="${cx.toFixed(1)}" y2="${wickBot.toFixed(1)}" class="wick ${cls}" />` +
+      `<rect x="${(cx - candleW / 2).toFixed(1)}" y="${bodyTop.toFixed(1)}" width="${candleW.toFixed(1)}" height="${bodyH.toFixed(1)}" class="body ${cls}" />`;
+  }
+
+  // (priceLine kept for reference but not rendered — candles replace it)
+  void priceLine;
+
+  els.priceChart.innerHTML =
+    priceGrid +
+    candles +
+    (sma50Pts.length ? `<path d="${sma50Path}" class="line sma50" />` : "") +
+    (sma20Pts.length ? `<path d="${sma20Path}" class="line sma20" />` : "") +
+    `<circle cx="${lastX}" cy="${lastY}" r="3.5" class="last-point" />` +
+    `<line x1="${padL}" y1="${(rsiTop - 8).toFixed(1)}" x2="${W - padR}" y2="${(rsiTop - 8).toFixed(1)}" class="axis-divider" />` +
+    rsiRefs +
+    (rsiPts.length ? `<path d="${rsiPath}" class="line rsi" />` : "") +
+    rsiLabels +
+    `<text x="${padL - 6}" y="${(rsiTop + 4).toFixed(1)}" class="section-label" text-anchor="end">RSI</text>` +
+    xLabels;
+}
 
 // ---------- Technical indicators ----------
 function sma(values, period) {
@@ -192,7 +563,7 @@ function countOccurrences(haystack, needle) {
 }
 
 // ---------- Rule-based signal ----------
-function ruleBasedSignal(priceData, newsText) {
+function ruleBasedSignal(priceData, newsText, stats = null) {
   const closes = priceData ? priceData.prices.map((p) => p.close) : [];
   const last = closes[closes.length - 1];
   const sma20 = sma(closes, 20);
@@ -242,6 +613,33 @@ function ruleBasedSignal(priceData, newsText) {
     else if (mom5 < -3) { score -= 0.5; reasons.push(`5일 모멘텀 ${mom5.toFixed(1)}% — 단기 강한 하락 (-0.5)`); }
   }
 
+  // 52-week band position
+  const meta = priceData?.meta || {};
+  const currentPx = meta.regularMarketPrice ?? last;
+  if (meta.fiftyTwoWeekHigh && meta.fiftyTwoWeekLow && currentPx != null) {
+    const range = meta.fiftyTwoWeekHigh - meta.fiftyTwoWeekLow;
+    const pos = range > 0 ? (currentPx - meta.fiftyTwoWeekLow) / range : 0.5;
+    if (pos < 0.2) { score += 0.5; reasons.push(`52주 위치 ${(pos*100).toFixed(0)}% — 저점 근접, 평균 회귀 기대 (+0.5)`); }
+    else if (pos > 0.85) { score -= 0.5; reasons.push(`52주 위치 ${(pos*100).toFixed(0)}% — 고점 근접, 조정 리스크 (-0.5)`); }
+    else { reasons.push(`52주 위치 ${(pos*100).toFixed(0)}% — 중간 대역 (0)`); }
+  }
+
+  // Analyst target vs current price
+  if (stats?.targetMean && currentPx != null) {
+    const gap = (stats.targetMean - currentPx) / currentPx;
+    if (gap > 0.15) { score += 0.75; reasons.push(`애널리스트 평균 목표주가 ${stats.targetMean.toFixed(2)} — 현재가 대비 +${(gap*100).toFixed(1)}% 상향여력 (+0.75)`); }
+    else if (gap < -0.05) { score -= 0.75; reasons.push(`애널리스트 평균 목표주가 ${stats.targetMean.toFixed(2)} — 현재가 대비 ${(gap*100).toFixed(1)}% 하향 (-0.75)`); }
+    else { reasons.push(`애널리스트 평균 목표주가 ${stats.targetMean.toFixed(2)} — 현재가 근접 (0)`); }
+  }
+
+  // Analyst consensus
+  if (stats?.recommendationMean != null) {
+    const r = stats.recommendationMean; // 1=strong buy, 5=strong sell
+    if (r <= 2.0) { score += 0.5; reasons.push(`애널리스트 컨센서스 ${r.toFixed(1)}/5 — 매수 우세 (+0.5)`); }
+    else if (r >= 3.5) { score -= 0.5; reasons.push(`애널리스트 컨센서스 ${r.toFixed(1)}/5 — 매도 우세 (-0.5)`); }
+    else { reasons.push(`애널리스트 컨센서스 ${r.toFixed(1)}/5 — 중립 (0)`); }
+  }
+
   // Sentiment
   if (sentiment.positive + sentiment.negative > 0) {
     const sScore = sentiment.score; // -1..+1
@@ -253,14 +651,14 @@ function ruleBasedSignal(priceData, newsText) {
     reasons.push(`뉴스 감성: 키워드 매칭 없음 (0)`);
   }
 
-  // Map score → signal
+  // Map score → signal (thresholds slightly higher due to more inputs)
   let signal;
-  if (score >= 1.2) signal = "BUY";
-  else if (score <= -1.2) signal = "SELL";
+  if (score >= 1.5) signal = "BUY";
+  else if (score <= -1.5) signal = "SELL";
   else signal = "HOLD";
 
-  // Confidence: |score| normalized to 0..1 (cap at 3.5)
-  const confidence = Math.min(1, Math.abs(score) / 3.5);
+  // Confidence: |score| normalized to 0..1 (cap at 5.0 given more inputs)
+  const confidence = Math.min(1, Math.abs(score) / 5.0);
 
   return {
     signal,
@@ -271,8 +669,37 @@ function ruleBasedSignal(priceData, newsText) {
   };
 }
 
+// ---------- Stats prompt formatter ----------
+function formatStatsForPrompt(price, stats) {
+  const m = price?.meta || {};
+  const lines = [];
+  if (m.regularMarketPrice != null) lines.push(`현재가: ${m.regularMarketPrice}`);
+  if (m.previousClose != null) lines.push(`전일 종가: ${m.previousClose}`);
+  if (m.fiftyTwoWeekHigh && m.fiftyTwoWeekLow) {
+    lines.push(`52주 범위: ${m.fiftyTwoWeekLow} ~ ${m.fiftyTwoWeekHigh}`);
+    const cur = m.regularMarketPrice;
+    if (cur) {
+      const range = m.fiftyTwoWeekHigh - m.fiftyTwoWeekLow;
+      const pos = range > 0 ? ((cur - m.fiftyTwoWeekLow) / range) * 100 : 50;
+      lines.push(`52주 위치: ${pos.toFixed(0)}%`);
+    }
+  }
+  if (m.dayVolume) lines.push(`당일 거래량: ${m.dayVolume}`);
+  if (stats) {
+    if (stats.marketCap) lines.push(`시가총액: ${stats.marketCap}`);
+    if (stats.trailingPE) lines.push(`PER(TTM): ${stats.trailingPE.toFixed(2)}`);
+    if (stats.forwardPE) lines.push(`PER(Fwd): ${stats.forwardPE.toFixed(2)}`);
+    if (stats.trailingEPS) lines.push(`EPS(TTM): ${stats.trailingEPS.toFixed(2)}`);
+    if (stats.dividendYield) lines.push(`배당수익률: ${(stats.dividendYield * 100).toFixed(2)}%`);
+    if (stats.beta) lines.push(`베타: ${stats.beta.toFixed(2)}`);
+    if (stats.targetMean) lines.push(`애널리스트 평균 목표주가: ${stats.targetMean.toFixed(2)}`);
+    if (stats.recommendationKey) lines.push(`애널리스트 컨센서스: ${stats.recommendationKey}${stats.numAnalysts ? " ("+stats.numAnalysts+"명)" : ""}`);
+  }
+  return lines.join("\n") || "(스탯 정보 없음)";
+}
+
 // ---------- Claude API ----------
-async function askClaude(apiKey, model, { ticker, priceSummaryText, newsText, ruleResult }) {
+async function askClaude(apiKey, model, { ticker, priceSummaryText, statsSummaryText, newsText, ruleResult }) {
   const systemPrompt = `You are a cautious equity analyst assistant. Given price history summary, news text, and rule-based technical signals, provide an independent Buy/Sell/Hold recommendation with brief reasoning.
 
 Respond ONLY with valid JSON matching this exact schema:
@@ -290,7 +717,10 @@ Do not include markdown code fences or any text outside the JSON object.`;
 --- 가격 요약 ---
 ${priceSummaryText || "(없음)"}
 
---- 뉴스 텍스트 ---
+--- 핵심 스탯 지표 ---
+${statsSummaryText || "(없음)"}
+
+--- 뉴스 헤드라인 / 컨텍스트 ---
 ${newsText || "(뉴스 텍스트가 제공되지 않음)"}
 
 --- 규칙 기반 사전 신호 (참고용) ---
@@ -299,7 +729,10 @@ score: ${ruleResult.score}
 reasons:
 ${ruleResult.reasons.map((r) => "- " + r).join("\n")}
 
-위 정보를 종합해 독립적인 판단을 내려주세요. 규칙 기반 신호에 무조건 동조할 필요는 없습니다.`;
+위 정보(가격 추이 + 스탯 + 뉴스)를 종합해 독립적인 매수/매도/홀드 판단을 내려주세요.
+- 52주 위치, PER, 애널리스트 목표주가/컨센서스가 있으면 반드시 언급
+- 뉴스에서 실제로 신호가 되는 이벤트 (실적, 가이던스, 규제, 인수합병 등)에 가중치
+- 규칙 신호에 무조건 동조할 필요는 없음 — 반대 결론도 가능`;
 
   const resp = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -456,10 +889,11 @@ els.analyzeBtn.addEventListener("click", async () => {
     els.priceStatus.innerHTML = `<span class="error">먼저 가격을 조회하세요.</span>`;
     return;
   }
-  const newsText = els.news.value;
+  const combinedNews = combineNewsText(newsData, els.news.value);
   const priceSummaryText = formatPriceSummary(priceData);
+  const statsSummaryText = formatStatsForPrompt(priceData, statsData);
 
-  const ruleResult = ruleBasedSignal(priceData, newsText);
+  const ruleResult = ruleBasedSignal(priceData, combinedNews, statsData);
 
   const apiKey = els.apiKey.value.trim();
   const model = els.model.value;
@@ -473,7 +907,8 @@ els.analyzeBtn.addEventListener("click", async () => {
       claudeResult = await askClaude(apiKey, model, {
         ticker: priceData.ticker,
         priceSummaryText,
-        newsText,
+        statsSummaryText,
+        newsText: combinedNews,
         ruleResult,
       });
     } catch (e) {

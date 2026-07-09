@@ -36,9 +36,36 @@
         <div class="price-summary" id="price-summary"></div>
       </div>
 
+      <div class="field" id="chart-container" hidden>
+        <label>가격 & 지표 차트</label>
+        <div class="chart-wrapper">
+          <svg id="price-chart" viewBox="0 0 800 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="가격 및 지표 차트"></svg>
+        </div>
+        <div class="chart-legend">
+          <span class="legend-item"><span class="dot" style="background: var(--accent)"></span>종가</span>
+          <span class="legend-item"><span class="dot" style="background: #38bdf8"></span>SMA20</span>
+          <span class="legend-item"><span class="dot" style="background: #fbbf24"></span>SMA50</span>
+          <span class="legend-item"><span class="dot" style="background: var(--buy)"></span>상승 캔들</span>
+          <span class="legend-item"><span class="dot" style="background: var(--sell)"></span>하락 캔들</span>
+          <span class="legend-item"><span class="dot" style="background: #a78bfa"></span>RSI(14)</span>
+        </div>
+      </div>
+
+      <div class="field" id="stats-card" hidden>
+        <label>핵심 지표 (자동 조회)</label>
+        <div class="news-status" id="stats-status"></div>
+        <div class="stats-grid" id="stats-grid"></div>
+      </div>
+
+      <div class="field" id="auto-news" hidden>
+        <label>관련 뉴스 (자동 조회)</label>
+        <div class="news-status" id="news-auto-status"></div>
+        <ul class="news-list" id="news-list"></ul>
+      </div>
+
       <div class="field">
-        <label for="news">뉴스 / 이슈 텍스트</label>
-        <textarea id="news" rows="8" placeholder="관련 뉴스 기사, 실적 발표 요약, 이슈를 붙여넣으세요 (한국어 / 영어 모두 가능)"></textarea>
+        <label for="news">추가 뉴스 / 컨텍스트 (선택)</label>
+        <textarea id="news" rows="6" placeholder="자동으로 조회된 뉴스 외에 추가로 반영하고 싶은 텍스트를 붙여넣으세요 (한국어 / 영어 모두 가능)"></textarea>
       </div>
 
       <details class="field">
