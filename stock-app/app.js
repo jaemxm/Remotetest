@@ -67,13 +67,21 @@ els.clearKeyBtn.addEventListener("click", () => {
 });
 
 // ---------- Price fetching ----------
+function corsFallbackUrls(url) {
+  const enc = encodeURIComponent(url);
+  return [
+    url,
+    `https://corsproxy.io/?url=${enc}`,
+    `https://api.codetabs.com/v1/proxy?quest=${enc}`,
+    `https://api.allorigins.win/raw?url=${enc}`,
+    `https://thingproxy.freeboard.io/fetch/${url}`,
+    `https://cors.eu.org/${url}`,
+  ];
+}
+
 async function fetchYahoo(ticker, range) {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=${range}`;
-  const tryUrls = [
-    url,
-    `https://corsproxy.io/?${encodeURIComponent(url)}`,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-  ];
+  const tryUrls = corsFallbackUrls(url);
   let lastErr = null;
   for (const u of tryUrls) {
     try {
@@ -122,11 +130,7 @@ async function fetchYahoo(ticker, range) {
 async function fetchStats(ticker) {
   const modules = "summaryDetail,defaultKeyStatistics,financialData,price,recommendationTrend";
   const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=${modules}`;
-  const tryUrls = [
-    url,
-    `https://corsproxy.io/?${encodeURIComponent(url)}`,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-  ];
+  const tryUrls = corsFallbackUrls(url);
   let lastErr = null;
   for (const u of tryUrls) {
     try {
@@ -166,11 +170,7 @@ async function fetchStats(ticker) {
 
 async function fetchNews(ticker) {
   const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(ticker)}&newsCount=15&quotesCount=0&enableFuzzyQuery=false`;
-  const tryUrls = [
-    url,
-    `https://corsproxy.io/?${encodeURIComponent(url)}`,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-  ];
+  const tryUrls = corsFallbackUrls(url);
   let lastErr = null;
   for (const u of tryUrls) {
     try {
