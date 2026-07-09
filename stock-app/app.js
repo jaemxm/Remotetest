@@ -905,14 +905,63 @@ function signalLabelKo(sig) {
   return { BUY: "매수", SELL: "매도", HOLD: "홀드" }[sig] || sig;
 }
 
+function generateRuleSummary(tickerLabel, ruleResult, positive, negative) {
+  const signal = ruleResult.signal;
+  const conf = ruleResult.confidence;
+  const posTags = positive.slice(0, 3).map((c) => c.tag);
+  const negTags = negative.slice(0, 2).map((c) => c.tag);
+  const parts = [];
+
+  if (signal === "BUY") {
+    parts.push(`${tickerLabel}는 현재 매수 신호가 우세합니다.`);
+    if (posTags.length) {
+      parts.push(`주요 지지 요인은 ${posTags.join(", ")} 등이며, 상방 여지를 뒷받침합니다.`);
+    }
+    if (negTags.length) {
+      parts.push(`다만 ${negTags.join(", ")}는 단기 조정 리스크로 작용할 수 있어, 성급한 진입보다 확인 후 진입이 안전합니다.`);
+    }
+  } else if (signal === "SELL") {
+    parts.push(`${tickerLabel}는 현재 매도 신호가 우세합니다.`);
+    if (negTags.length) {
+      parts.push(`주된 하방 요인은 ${negTags.join(", ")} 등입니다.`);
+    }
+    if (posTags.length) {
+      parts.push(`반면 ${posTags.join(", ")}가 반등 지지 요인으로 존재하므로 완전 청산보다 부분 축소가 합리적일 수 있습니다.`);
+    }
+  } else {
+    parts.push(`${tickerLabel}는 방향성이 뚜렷하지 않아 홀드가 적절합니다.`);
+    if (posTags.length && negTags.length) {
+      parts.push(`상방 요인(${posTags.slice(0, 2).join(", ")})과 하방 리스크(${negTags.join(", ")})가 상쇄되어 있어, 추가 신호 확인 후 판단이 안전합니다.`);
+    } else if (posTags.length) {
+      parts.push(`상방 요인(${posTags.slice(0, 2).join(", ")})이 있으나 결정적인 매수 신호까진 부족한 상황입니다.`);
+    } else if (negTags.length) {
+      parts.push(`하방 리스크(${negTags.join(", ")})가 존재하나 확정적 매도 신호는 아니어서 관망이 유리합니다.`);
+    }
+  }
+
+  if (conf < 0.3) {
+    parts.push(`신호 강도는 약한 편이라 큰 포지션 결정 전에 재확인을 권장합니다.`);
+  } else if (conf > 0.75) {
+    parts.push(`신호 강도가 강해 결정 근거가 상대적으로 견고합니다.`);
+  }
+
+  return parts.join(" ");
+}
+
 function renderResults(ruleResult, claudeResult, finalResult) {
   els.resultCard.hidden = false;
 
-  // Final verdict — with top drivers + risks parsed from rule reasons
+  // Final verdict — parse contributions
   const sigClass = finalResult.signal.toLowerCase();
+  const shortLabel = (text) => {
+    const m = String(text).match(/—\s*(.+?)\s*\([+\-]?[0-9.]+\)\s*$/);
+    if (m) return m[1].trim();
+    const m2 = String(text).match(/^(.+?)\s*\([+\-]?[0-9.]+\)\s*$/);
+    return m2 ? m2[1].trim() : String(text);
+  };
   const contribs = (ruleResult.reasons || []).map((r) => {
     const m = String(r).match(/\(([+\-]?[0-9.]+)\)\s*$/);
-    return { text: String(r), score: m ? parseFloat(m[1]) : 0 };
+    return { text: String(r), tag: shortLabel(r), score: m ? parseFloat(m[1]) : 0 };
   });
   const positive = contribs.filter((c) => c.score > 0.01).sort((a, b) => b.score - a.score);
   const negative = contribs.filter((c) => c.score < -0.01).sort((a, b) => a.score - b.score);
@@ -920,12 +969,23 @@ function renderResults(ruleResult, claudeResult, finalResult) {
   const negList = negative.slice(0, 3).map((c) => `<li>${escapeHtml(c.text)}</li>`).join("");
   const confPct = (finalResult.confidence * 100).toFixed(0);
 
+  // Natural-language reasoning summary
+  const tickerLabel = priceData?.ticker || "이 종목";
+  const narrativeSummary = claudeResult?.reasoning
+    ? claudeResult.reasoning
+    : generateRuleSummary(tickerLabel, ruleResult, positive, negative);
+  const summarySource = claudeResult?.reasoning ? "Claude AI" : "규칙 엔진";
+
   els.finalVerdict.innerHTML = `
     <div class="label">최종 판단</div>
     <div class="signal ${sigClass}">${signalLabelKo(finalResult.signal)} <span class="signal-en">(${finalResult.signal})</span></div>
     <div class="conf-row">
       <span class="conf-label">신뢰도 ${confPct}%</span>
       <div class="conf-bar"><div class="conf-bar-fill ${sigClass}" style="width:${confPct}%"></div></div>
+    </div>
+    <div class="verdict-narrative">
+      <h4>📝 판단 근거 요약 <span class="narrative-source">${escapeHtml(summarySource)}</span></h4>
+      <p>${escapeHtml(narrativeSummary)}</p>
     </div>
     <div class="drivers-grid">
       ${positive.length ? `<div class="drivers-block support"><h4>✅ 지지 요인 (상위 ${Math.min(3, positive.length)})</h4><ul>${posList}</ul></div>` : ""}
