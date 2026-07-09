@@ -16,6 +16,10 @@ concurrency:
   group: pages
   cancel-in-progress: true
 
+# Obfuscated path — do not link from anywhere; share the URL only with intended users.
+env:
+  APP_SLUG: signal-4a7f2c8b3e9147d2
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -26,48 +30,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build site
+      - name: Build site (obfuscated path, no root index)
         run: |
-          mkdir -p _site
-          cp -r stock-app _site/stock-app
-          cp -r history-app _site/history-app
+          mkdir -p "_site/$APP_SLUG"
+          cp -r stock-app/* "_site/$APP_SLUG/"
+          # Root gets an intentional 404 page (no discoverable links)
           cat > _site/index.html <<'HTML'
-          <!DOCTYPE html>
-          <html lang="ko">
-          <head>
-            <meta charset="UTF-8" />
-            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-            <title>Remotetest — Apps</title>
-            <style>
-              body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", sans-serif;
-                     background: #0f1419; color: #e6edf3; margin: 0; padding: 40px 20px; }
-              .wrap { max-width: 600px; margin: 0 auto; }
-              h1 { margin-top: 0; letter-spacing: -0.02em; }
-              .card { background: #1a2029; border: 1px solid #2d3646; border-radius: 12px;
-                      padding: 20px; margin-bottom: 16px; }
-              a { color: #4a9eff; text-decoration: none; font-weight: 600; font-size: 18px; }
-              a:hover { text-decoration: underline; }
-              p { color: #8b98a5; margin: 6px 0 0; font-size: 14px; }
-            </style>
-          </head>
-          <body>
-            <div class="wrap">
-              <h1>Remotetest — Apps</h1>
-              <div class="card">
-                <a href="./stock-app/">📈 Stock Signal</a>
-                <p>티커 + 뉴스 + 스탯 기반 매수/매도/홀드 판단 도우미</p>
-              </div>
-              <div class="card">
-                <a href="./history-app/">🇺🇸 American History Mini-Games</a>
-                <p>5개 미니게임 (별도 사이드 프로젝트)</p>
-              </div>
-            </div>
-          </body>
-          </html>
+          <!DOCTYPE html><html><head><meta charset="UTF-8"><title>404</title>
+          <style>body{font-family:sans-serif;background:#111;color:#666;text-align:center;padding:80px}</style>
+          </head><body><h1>404</h1><p>Not found.</p></body></html>
           HTML
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
@@ -77,3 +54,9 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Print obfuscated URL
+        run: |
+          echo "----------------------------------------"
+          echo "App URL: ${{ steps.deployment.outputs.page_url }}${APP_SLUG}/"
+          echo "----------------------------------------"
