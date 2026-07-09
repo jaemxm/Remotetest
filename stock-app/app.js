@@ -83,10 +83,12 @@ async function fetchYahoo(ticker, range) {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=${range}`;
   const tryUrls = corsFallbackUrls(url);
   let lastErr = null;
+  const attempts = [];
   for (const u of tryUrls) {
+    const label = new URL(u).host;
     try {
       const resp = await fetch(u);
-      if (!resp.ok) { lastErr = new Error(`HTTP ${resp.status}`); continue; }
+      if (!resp.ok) { lastErr = new Error(`HTTP ${resp.status}`); attempts.push(`${label}: HTTP ${resp.status}`); continue; }
       const json = await resp.json();
       const result = json?.chart?.result?.[0];
       if (!result) throw new Error("응답에 데이터가 없습니다.");
@@ -122,9 +124,11 @@ async function fetchYahoo(ticker, range) {
           fiftyTwoWeekLow: m.fiftyTwoWeekLow,
         },
       };
-    } catch (e) { lastErr = e; }
+    } catch (e) { lastErr = e; attempts.push(`${label}: ${e.message || e.name || "err"}`); }
   }
-  throw lastErr || new Error("가격 조회 실패");
+  const err = new Error(`가격 조회 실패 — 시도 ${attempts.length}건 모두 실패`);
+  err.attempts = attempts;
+  throw err;
 }
 
 async function fetchStats(ticker) {
@@ -247,7 +251,10 @@ els.fetchBtn.addEventListener("click", async () => {
     renderStats(priceData, statsData, statsResult.status === "rejected" ? statsResult.reason?.message : null);
   } catch (e) {
     priceData = null;
-    els.priceStatus.innerHTML = `<span class="error">가격 조회 실패: ${escapeHtml(e.message)}. 티커를 확인하거나 잠시 후 다시 시도하세요.</span>`;
+    const attemptsHtml = e.attempts && e.attempts.length
+      ? `<details style="margin-top:6px"><summary>진단 상세 (${e.attempts.length}건)</summary><pre style="white-space:pre-wrap;font-size:11px;color:var(--muted);margin:4px 0">${escapeHtml(e.attempts.join("\n"))}</pre></details>`
+      : "";
+    els.priceStatus.innerHTML = `<span class="error">가격 조회 실패: ${escapeHtml(e.message)}. 티커를 확인하거나 잠시 후 다시 시도하세요.</span>${attemptsHtml}`;
     els.pricePreview.hidden = true;
     els.chartContainer.hidden = true;
     els.autoNews.hidden = true;
