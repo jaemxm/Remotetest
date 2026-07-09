@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stock Signal — 매수/매도/홀드 판단 도우미</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="site-header">
+    <h1>Stock Signal</h1>
+    <p class="tagline">뉴스 + 가격 추이 → 매수 / 매도 / 홀드 판단 지원</p>
+  </header>
+
+  <main class="container">
+    <section class="card" id="input-card">
+      <h2>1. 입력</h2>
+
+      <div class="field">
+        <label for="ticker">티커 (예: AAPL, TSLA, MSFT)</label>
+        <div class="row">
+          <input id="ticker" type="text" placeholder="AAPL" autocomplete="off" />
+          <select id="range">
+            <option value="1mo">1개월</option>
+            <option value="3mo" selected>3개월</option>
+            <option value="6mo">6개월</option>
+            <option value="1y">1년</option>
+          </select>
+          <button id="fetch-btn" type="button">가격 조회</button>
+        </div>
+        <p class="hint" id="price-status">티커를 입력하고 가격을 조회하세요.</p>
+      </div>
+
+      <div class="field" id="price-preview" hidden>
+        <label>가격 요약</label>
+        <div class="price-summary" id="price-summary"></div>
+      </div>
+
+      <div class="field">
+        <label for="news">뉴스 / 이슈 텍스트</label>
+        <textarea id="news" rows="8" placeholder="관련 뉴스 기사, 실적 발표 요약, 이슈를 붙여넣으세요 (한국어 / 영어 모두 가능)"></textarea>
+      </div>
+
+      <details class="field">
+        <summary>고급 설정 — Claude API 키 (선택)</summary>
+        <p class="hint">
+          API 키가 있으면 규칙 기반 신호에 더해 Claude의 독립 판단을 앙상블합니다.
+          키는 브라우저 localStorage에만 저장되며 Anthropic 이외 어디에도 전송되지 않습니다.
+          <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">API 키 발급</a>
+        </p>
+        <div class="row">
+          <input id="api-key" type="password" placeholder="sk-ant-..." autocomplete="off" />
+          <select id="model">
+            <option value="claude-haiku-4-5-20251001" selected>Haiku 4.5 (빠름/저렴)</option>
+            <option value="claude-sonnet-5">Sonnet 5 (더 정밀)</option>
+          </select>
+          <button id="save-key-btn" type="button" class="secondary">저장</button>
+          <button id="clear-key-btn" type="button" class="secondary">삭제</button>
+        </div>
+        <p class="hint" id="key-status"></p>
+      </details>
+
+      <button id="analyze-btn" type="button" class="primary big">분석하기</button>
+    </section>
+
+    <section class="card" id="result-card" hidden>
+      <h2>2. 결과</h2>
+
+      <div id="final-verdict" class="verdict"></div>
+
+      <div class="two-col">
+        <div class="engine-block" id="rule-block">
+          <h3>규칙 기반 신호</h3>
+          <div class="engine-signal" id="rule-signal"></div>
+          <ul class="reasons" id="rule-reasons"></ul>
+        </div>
+        <div class="engine-block" id="claude-block">
+          <h3>Claude 판단</h3>
+          <div class="engine-signal" id="claude-signal"></div>
+          <div class="reasons" id="claude-reasons"></div>
+        </div>
+      </div>
+
+      <details class="field">
+        <summary>기술적 지표 원본값</summary>
+        <div id="raw-indicators"></div>
+      </details>
+    </section>
+
+    <section class="disclaimer">
+      <strong>⚠️ 투자 유의사항</strong>
+      이 도구는 교육/보조 목적으로만 사용하세요. 최종 투자 판단과 책임은 사용자 본인에게 있습니다.
+      과거 가격과 뉴스 텍스트만으로 미래 수익을 보장할 수 없습니다.
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
