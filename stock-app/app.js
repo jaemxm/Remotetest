@@ -28,6 +28,8 @@ const els = {
   saveAvBtn: $("save-av-btn"),
   clearAvBtn: $("clear-av-btn"),
   avKeyStatus: $("av-key-status"),
+  watchlistField: $("watchlist-field"),
+  watchlistChips: $("watchlist-chips"),
   analyzeBtn: $("analyze-btn"),
   resultCard: $("result-card"),
   finalVerdict: $("final-verdict"),
@@ -243,6 +245,7 @@ els.fetchBtn.addEventListener("click", async () => {
   els.priceStatus.textContent = "가격 조회 중…";
   try {
     priceData = await fetchYahoo(t, els.range.value);
+    pushWatchlist(t);
     els.priceStatus.textContent = `조회 성공 (${priceData.prices.length}일)`;
     els.priceSummary.textContent = formatPriceSummary(priceData);
     els.pricePreview.hidden = false;
@@ -359,6 +362,28 @@ function renderStats(price, stats, errMsg) {
     if (stats.recommendationKey) {
       push("애널리스트 의견", recLabel(stats.recommendationKey), stats.numAnalysts ? `${stats.numAnalysts}명` : "");
     }
+    // Analyst rating stacked bar (if breakdown available)
+    const totalAn = (stats.analystBuy || 0) + (stats.analystHold || 0) + (stats.analystSell || 0);
+    if (totalAn > 0) {
+      const buyPct = ((stats.analystBuy || 0) / totalAn) * 100;
+      const holdPct = ((stats.analystHold || 0) / totalAn) * 100;
+      const sellPct = ((stats.analystSell || 0) / totalAn) * 100;
+      const bar = `
+        <div class="analyst-bar-row">
+          <div class="stat-label">애널리스트 등급 분포 (${totalAn}명)</div>
+          <div class="analyst-bar">
+            <div class="ab-seg ab-buy" style="width:${buyPct}%" title="매수 ${stats.analystBuy}">${stats.analystBuy || 0}</div>
+            <div class="ab-seg ab-hold" style="width:${holdPct}%" title="홀드 ${stats.analystHold}">${stats.analystHold || 0}</div>
+            <div class="ab-seg ab-sell" style="width:${sellPct}%" title="매도 ${stats.analystSell}">${stats.analystSell || 0}</div>
+          </div>
+          <div class="analyst-bar-legend">
+            <span><span class="dot" style="background:var(--buy)"></span>매수 ${stats.analystBuy || 0}</span>
+            <span><span class="dot" style="background:var(--hold)"></span>홀드 ${stats.analystHold || 0}</span>
+            <span><span class="dot" style="background:var(--sell)"></span>매도 ${stats.analystSell || 0}</span>
+          </div>
+        </div>`;
+      cells.push(bar);
+    }
   }
 
   els.statsGrid.innerHTML = cells.join("");
@@ -403,13 +428,15 @@ function renderPriceChart(data) {
   const n = closes.length;
   if (n < 2) { els.priceChart.innerHTML = ""; return; }
 
-  // Layout (matches viewBox="0 0 800 360" in index.html)
-  const W = 800, H = 360;
+  // Layout (viewBox="0 0 800 420" — expanded to fit volume subpanel)
+  const W = 800, H = 420;
   const padL = 48, padR = 12;
-  const priceTop = 16, priceBottom = 246;
-  const rsiTop = 268, rsiBottom = 336;
+  const priceTop = 16, priceBottom = 226;
+  const volTop = 236, volBottom = 288;
+  const rsiTop = 302, rsiBottom = 396;
   const innerW = W - padL - padR;
   const priceInnerH = priceBottom - priceTop;
+  const volInnerH = volBottom - volTop;
   const rsiInnerH = rsiBottom - rsiTop;
 
   // Price scale (with 5% padding)
@@ -520,13 +547,34 @@ function renderPriceChart(data) {
   // (priceLine kept for reference but not rendered — candles replace it)
   void priceLine;
 
+  // Volume subpanel — bull/bear colored bars
+  const volumes = data.prices.map((p) => p.volume ?? 0);
+  const maxVol = Math.max(1, ...volumes);
+  const volY = (v) => volTop + (1 - v / maxVol) * volInnerH;
+  const volBarW = Math.max(1, candleW * 0.85);
+  let volBars = "";
+  for (let i = 0; i < n; i++) {
+    const v = volumes[i];
+    if (!v) continue;
+    const p = data.prices[i];
+    const bull = p.close >= p.open;
+    const cls = bull ? "vol-bull" : "vol-bear";
+    const cx = xAt(i);
+    const y = volY(v);
+    const h = volBottom - y;
+    volBars += `<rect x="${(cx - volBarW / 2).toFixed(1)}" y="${y.toFixed(1)}" width="${volBarW.toFixed(1)}" height="${h.toFixed(1)}" class="vol-bar ${cls}" />`;
+  }
+
   els.priceChart.innerHTML =
     priceGrid +
     candles +
     (sma50Pts.length ? `<path d="${sma50Path}" class="line sma50" />` : "") +
     (sma20Pts.length ? `<path d="${sma20Path}" class="line sma20" />` : "") +
     `<circle cx="${lastX}" cy="${lastY}" r="3.5" class="last-point" />` +
-    `<line x1="${padL}" y1="${(rsiTop - 8).toFixed(1)}" x2="${W - padR}" y2="${(rsiTop - 8).toFixed(1)}" class="axis-divider" />` +
+    `<line x1="${padL}" y1="${(volTop - 6).toFixed(1)}" x2="${W - padR}" y2="${(volTop - 6).toFixed(1)}" class="axis-divider" />` +
+    volBars +
+    `<text x="${padL - 6}" y="${(volTop + 4).toFixed(1)}" class="section-label" text-anchor="end">거래량</text>` +
+    `<line x1="${padL}" y1="${(rsiTop - 6).toFixed(1)}" x2="${W - padR}" y2="${(rsiTop - 6).toFixed(1)}" class="axis-divider" />` +
     rsiRefs +
     (rsiPts.length ? `<path d="${rsiPath}" class="line rsi" />` : "") +
     rsiLabels +
@@ -860,13 +908,31 @@ function signalLabelKo(sig) {
 function renderResults(ruleResult, claudeResult, finalResult) {
   els.resultCard.hidden = false;
 
-  // Final verdict
+  // Final verdict — with top drivers + risks parsed from rule reasons
   const sigClass = finalResult.signal.toLowerCase();
+  const contribs = (ruleResult.reasons || []).map((r) => {
+    const m = String(r).match(/\(([+\-]?[0-9.]+)\)\s*$/);
+    return { text: String(r), score: m ? parseFloat(m[1]) : 0 };
+  });
+  const positive = contribs.filter((c) => c.score > 0.01).sort((a, b) => b.score - a.score);
+  const negative = contribs.filter((c) => c.score < -0.01).sort((a, b) => a.score - b.score);
+  const posList = positive.slice(0, 3).map((c) => `<li>${escapeHtml(c.text)}</li>`).join("");
+  const negList = negative.slice(0, 3).map((c) => `<li>${escapeHtml(c.text)}</li>`).join("");
+  const confPct = (finalResult.confidence * 100).toFixed(0);
+
   els.finalVerdict.innerHTML = `
     <div class="label">최종 판단</div>
-    <div class="signal ${sigClass}">${signalLabelKo(finalResult.signal)} (${finalResult.signal})</div>
-    <div class="confidence">신뢰도 ${(finalResult.confidence * 100).toFixed(0)}%</div>
+    <div class="signal ${sigClass}">${signalLabelKo(finalResult.signal)} <span class="signal-en">(${finalResult.signal})</span></div>
+    <div class="conf-row">
+      <span class="conf-label">신뢰도 ${confPct}%</span>
+      <div class="conf-bar"><div class="conf-bar-fill ${sigClass}" style="width:${confPct}%"></div></div>
+    </div>
+    <div class="drivers-grid">
+      ${positive.length ? `<div class="drivers-block support"><h4>✅ 지지 요인 (상위 ${Math.min(3, positive.length)})</h4><ul>${posList}</ul></div>` : ""}
+      ${negative.length ? `<div class="drivers-block risk"><h4>⚠️ 리스크 (상위 ${Math.min(3, negative.length)})</h4><ul>${negList}</ul></div>` : ""}
+    </div>
     <div class="summary-line">${escapeHtml(finalResult.summary)}</div>
+    <div class="recheck-hint">🔄 재확인 권장: <strong>3~5 거래일 후</strong> 또는 실적 발표 / 주요 뉴스 발생 시</div>
   `;
 
   // Rule block
@@ -963,6 +1029,34 @@ els.analyzeBtn.addEventListener("click", async () => {
 // ---------- Init ----------
 loadKey();
 loadAvKey();
+loadWatchlist();
+
+// ---------- Watchlist (recent tickers) ----------
+const WATCHLIST_KEY = "stocksignal.watchlist";
+function loadWatchlist() {
+  let list = [];
+  try { list = JSON.parse(localStorage.getItem(WATCHLIST_KEY)) || []; } catch (_) {}
+  renderWatchlist(list);
+}
+function pushWatchlist(ticker) {
+  const t = ticker.toUpperCase();
+  let list = [];
+  try { list = JSON.parse(localStorage.getItem(WATCHLIST_KEY)) || []; } catch (_) {}
+  list = [t, ...list.filter((x) => x !== t)].slice(0, 5);
+  localStorage.setItem(WATCHLIST_KEY, JSON.stringify(list));
+  renderWatchlist(list);
+}
+function renderWatchlist(list) {
+  if (!list || !list.length) { els.watchlistField.hidden = true; return; }
+  els.watchlistField.hidden = false;
+  els.watchlistChips.innerHTML = list.map((t) => `<button type="button" class="chip" data-ticker="${escapeHtml(t)}">${escapeHtml(t)}</button>`).join("");
+  els.watchlistChips.querySelectorAll(".chip").forEach((el) => {
+    el.addEventListener("click", () => {
+      els.ticker.value = el.dataset.ticker;
+      els.fetchBtn.click();
+    });
+  });
+}
 els.ticker.addEventListener("keydown", (e) => {
   if (e.key === "Enter") { e.preventDefault(); els.fetchBtn.click(); }
 });

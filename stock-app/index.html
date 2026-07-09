@@ -16,6 +16,11 @@
     <section class="card" id="input-card">
       <h2>1. 입력</h2>
 
+      <div class="field" id="watchlist-field" hidden>
+        <label>최근 조회한 티커</label>
+        <div id="watchlist-chips" class="chip-row"></div>
+      </div>
+
       <div class="field">
         <label for="ticker">티커 (예: AAPL, TSLA, MSFT)</label>
         <div class="row">
@@ -39,7 +44,7 @@
       <div class="field" id="chart-container" hidden>
         <label>가격 & 지표 차트</label>
         <div class="chart-wrapper">
-          <svg id="price-chart" viewBox="0 0 800 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="가격 및 지표 차트"></svg>
+          <svg id="price-chart" viewBox="0 0 800 420" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="가격 및 지표 차트"></svg>
         </div>
         <div class="chart-legend">
           <span class="legend-item"><span class="dot" style="background: var(--accent)"></span>종가</span>
@@ -48,6 +53,7 @@
           <span class="legend-item"><span class="dot" style="background: var(--buy)"></span>상승 캔들</span>
           <span class="legend-item"><span class="dot" style="background: var(--sell)"></span>하락 캔들</span>
           <span class="legend-item"><span class="dot" style="background: #a78bfa"></span>RSI(14)</span>
+          <span class="legend-item"><span class="dot" style="background: var(--muted)"></span>거래량</span>
         </div>
       </div>
 
