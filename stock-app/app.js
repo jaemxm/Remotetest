@@ -249,33 +249,35 @@ els.fetchBtn.addEventListener("click", async () => {
     renderPriceChart(priceData);
     els.chartContainer.hidden = false;
 
-    // Stats + News in parallel
+    // Sequential fetch: Alpha Vantage throttles to ~1 req/sec
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     newsData = null;
     statsData = null;
-    els.autoNews.hidden = false;
-    els.newsAutoStatus.textContent = "뉴스 조회 중…";
-    els.newsList.innerHTML = "";
     els.statsCard.hidden = false;
-    els.statsStatus.textContent = "핵심 지표 조회 중…";
+    els.statsStatus.textContent = "핵심 지표 조회 중… (약 2초)";
     els.statsGrid.innerHTML = "";
+    els.autoNews.hidden = false;
+    els.newsAutoStatus.textContent = "뉴스 대기 중…";
+    els.newsList.innerHTML = "";
 
-    const [newsResult, statsResult] = await Promise.allSettled([
-      fetchNews(t),
-      fetchStats(t),
-    ]);
+    await sleep(1400);
+    const statsResult = await Promise.allSettled([fetchStats(t)]).then((r) => r[0]);
+    if (statsResult.status === "fulfilled") {
+      statsData = statsResult.value;
+      if (statsData?.fiftyTwoWeekHigh) priceData.meta.fiftyTwoWeekHigh = statsData.fiftyTwoWeekHigh;
+      if (statsData?.fiftyTwoWeekLow) priceData.meta.fiftyTwoWeekLow = statsData.fiftyTwoWeekLow;
+    }
+    renderStats(priceData, statsData, statsResult.status === "rejected" ? statsResult.reason?.message : null);
+
+    els.newsAutoStatus.textContent = "뉴스 조회 중… (약 2초)";
+    await sleep(1400);
+    const newsResult = await Promise.allSettled([fetchNews(t)]).then((r) => r[0]);
     if (newsResult.status === "fulfilled") {
       newsData = newsResult.value;
       renderNewsList(newsData);
     } else {
       els.newsAutoStatus.innerHTML = `<span class="error">뉴스 자동 조회 실패: ${escapeHtml(newsResult.reason?.message || "")}. 아래 텍스트 박스에 수동 입력 가능.</span>`;
     }
-    if (statsResult.status === "fulfilled") {
-      statsData = statsResult.value;
-      // Alpha Vantage OVERVIEW carries 52w — merge into price meta
-      if (statsData?.fiftyTwoWeekHigh) priceData.meta.fiftyTwoWeekHigh = statsData.fiftyTwoWeekHigh;
-      if (statsData?.fiftyTwoWeekLow) priceData.meta.fiftyTwoWeekLow = statsData.fiftyTwoWeekLow;
-    }
-    renderStats(priceData, statsData, statsResult.status === "rejected" ? statsResult.reason?.message : null);
   } catch (e) {
     priceData = null;
     const attemptsHtml = e.attempts && e.attempts.length
