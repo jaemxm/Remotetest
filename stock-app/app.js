@@ -24,6 +24,10 @@ const els = {
   saveKeyBtn: $("save-key-btn"),
   clearKeyBtn: $("clear-key-btn"),
   keyStatus: $("key-status"),
+  avKey: $("av-key"),
+  saveAvBtn: $("save-av-btn"),
+  clearAvBtn: $("clear-av-btn"),
+  avKeyStatus: $("av-key-status"),
   analyzeBtn: $("analyze-btn"),
   resultCard: $("result-card"),
   finalVerdict: $("final-verdict"),
@@ -66,132 +70,152 @@ els.clearKeyBtn.addEventListener("click", () => {
   els.keyStatus.textContent = "저장된 키를 삭제했습니다.";
 });
 
-// ---------- Price fetching ----------
-function corsFallbackUrls(url) {
-  const enc = encodeURIComponent(url);
-  return [
-    url,
-    `https://corsproxy.io/?url=${enc}`,
-    `https://api.codetabs.com/v1/proxy?quest=${enc}`,
-    `https://api.allorigins.win/raw?url=${enc}`,
-    `https://thingproxy.freeboard.io/fetch/${url}`,
-    `https://cors.eu.org/${url}`,
-  ];
+// Alpha Vantage key handlers
+function loadAvKey() {
+  const k = localStorage.getItem("stocksignal.avKey");
+  if (k) { els.avKey.value = k; els.avKeyStatus.textContent = "저장된 키 사용 중."; }
+}
+els.saveAvBtn.addEventListener("click", () => {
+  const k = els.avKey.value.trim();
+  if (!k) { els.avKeyStatus.textContent = "키를 먼저 입력하세요."; return; }
+  localStorage.setItem("stocksignal.avKey", k);
+  els.avKeyStatus.textContent = "저장 완료. 이 브라우저에만 남습니다.";
+});
+els.clearAvBtn.addEventListener("click", () => {
+  localStorage.removeItem("stocksignal.avKey");
+  els.avKey.value = "";
+  els.avKeyStatus.textContent = "저장된 키를 삭제했습니다.";
+});
+
+// ---------- Data source: Alpha Vantage (CORS-enabled, no proxy needed) ----------
+const AV_KEY_STORAGE = "stocksignal.avKey";
+
+function getAvKey() {
+  const k = localStorage.getItem(AV_KEY_STORAGE);
+  if (!k) throw new Error("Alpha Vantage API 키가 필요합니다. 아래 '데이터 소스 API 키' 섹션에서 무료 발급 후 저장하세요.");
+  return k;
+}
+
+function checkAvError(json) {
+  if (json?.Note) throw new Error("Alpha Vantage 일일 한도 초과 (25/day 무료). 내일 다시 시도하세요.");
+  if (json?.Information) throw new Error("AV: " + String(json.Information).slice(0, 200));
+  if (json?.["Error Message"]) throw new Error("AV: " + String(json["Error Message"]).slice(0, 200));
 }
 
 async function fetchYahoo(ticker, range) {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=${range}`;
-  const tryUrls = corsFallbackUrls(url);
-  let lastErr = null;
-  const attempts = [];
-  for (const u of tryUrls) {
-    const label = new URL(u).host;
-    try {
-      const resp = await fetch(u);
-      if (!resp.ok) { lastErr = new Error(`HTTP ${resp.status}`); attempts.push(`${label}: HTTP ${resp.status}`); continue; }
-      const json = await resp.json();
-      const result = json?.chart?.result?.[0];
-      if (!result) throw new Error("응답에 데이터가 없습니다.");
-      const quote = result.indicators?.quote?.[0];
-      const timestamps = result.timestamp;
-      if (!quote || !timestamps) throw new Error("가격 시계열이 비어 있습니다.");
-      const { open: opens, high: highs, low: lows, close: closes } = quote;
-      const pairs = timestamps
-        .map((t, i) => ({
-          date: new Date(t * 1000),
-          open: opens?.[i],
-          high: highs?.[i],
-          low: lows?.[i],
-          close: closes?.[i],
-        }))
-        .filter((p) => ["open", "high", "low", "close"].every(
-          (k) => typeof p[k] === "number" && !isNaN(p[k])
-        ));
-      if (pairs.length < 5) throw new Error("가격 데이터가 부족합니다.");
-      const m = result.meta || {};
-      return {
-        ticker: m.symbol || ticker,
-        currency: m.currency || "",
-        exchange: m.exchangeName || "",
-        prices: pairs,
-        meta: {
-          regularMarketPrice: m.regularMarketPrice,
-          previousClose: m.chartPreviousClose ?? m.previousClose,
-          dayHigh: m.regularMarketDayHigh,
-          dayLow: m.regularMarketDayLow,
-          dayVolume: m.regularMarketVolume,
-          fiftyTwoWeekHigh: m.fiftyTwoWeekHigh,
-          fiftyTwoWeekLow: m.fiftyTwoWeekLow,
-        },
-      };
-    } catch (e) { lastErr = e; attempts.push(`${label}: ${e.message || e.name || "err"}`); }
-  }
-  const err = new Error(`가격 조회 실패 — 시도 ${attempts.length}건 모두 실패`);
-  err.attempts = attempts;
-  throw err;
+  const apiKey = getAvKey();
+  const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${encodeURIComponent(ticker)}&outputsize=compact&apikey=${apiKey}`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`Alpha Vantage HTTP ${resp.status}`);
+  const json = await resp.json();
+  checkAvError(json);
+  const series = json?.["Time Series (Daily)"];
+  if (!series) throw new Error("가격 시계열이 비어있습니다. 티커를 확인하세요.");
+
+  const days = { "1mo": 30, "3mo": 90, "6mo": 180, "1y": 365 }[range] || 90;
+  const entries = Object.entries(series)
+    .sort((a, b) => a[0].localeCompare(b[0])) // ascending by date
+    .slice(-days);
+  const prices = entries.map(([date, v]) => ({
+    date: new Date(date),
+    open: parseFloat(v["1. open"]),
+    high: parseFloat(v["2. high"]),
+    low: parseFloat(v["3. low"]),
+    close: parseFloat(v["4. close"]),
+    volume: parseFloat(v["5. volume"]),
+  })).filter((p) => ["open", "high", "low", "close"].every((k) => !isNaN(p[k])));
+
+  if (prices.length < 5) throw new Error("가격 데이터가 부족합니다.");
+  const last = prices[prices.length - 1];
+  const prev = prices[prices.length - 2];
+  return {
+    ticker: json?.["Meta Data"]?.["2. Symbol"] || ticker.toUpperCase(),
+    currency: "USD",
+    exchange: "",
+    prices,
+    meta: {
+      regularMarketPrice: last.close,
+      previousClose: prev?.close,
+      dayHigh: last.high,
+      dayLow: last.low,
+      dayVolume: last.volume,
+      // fiftyTwoWeekHigh/Low populated later from OVERVIEW fetch
+    },
+  };
 }
 
 async function fetchStats(ticker) {
-  const modules = "summaryDetail,defaultKeyStatistics,financialData,price,recommendationTrend";
-  const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=${modules}`;
-  const tryUrls = corsFallbackUrls(url);
-  let lastErr = null;
-  for (const u of tryUrls) {
-    try {
-      const resp = await fetch(u);
-      if (!resp.ok) { lastErr = new Error(`HTTP ${resp.status}`); continue; }
-      const json = await resp.json();
-      const r = json?.quoteSummary?.result?.[0];
-      if (!r) { lastErr = new Error("빈 응답"); continue; }
-      const sd = r.summaryDetail || {};
-      const ks = r.defaultKeyStatistics || {};
-      const fd = r.financialData || {};
-      const pr = r.price || {};
-      const rt = r.recommendationTrend?.trend?.[0] || {};
-      const g = (obj, key) => obj?.[key]?.raw ?? (typeof obj?.[key] === "number" ? obj[key] : undefined);
-      return {
-        marketCap: g(pr, "marketCap") ?? g(sd, "marketCap"),
-        trailingPE: g(sd, "trailingPE") ?? g(ks, "trailingPE"),
-        forwardPE: g(sd, "forwardPE") ?? g(ks, "forwardPE"),
-        trailingEPS: g(ks, "trailingEps"),
-        forwardEPS: g(ks, "forwardEps"),
-        dividendYield: g(sd, "dividendYield"),
-        beta: g(ks, "beta") ?? g(sd, "beta"),
-        targetMean: g(fd, "targetMeanPrice"),
-        targetHigh: g(fd, "targetHighPrice"),
-        targetLow: g(fd, "targetLowPrice"),
-        recommendationMean: g(fd, "recommendationMean"),
-        recommendationKey: fd?.recommendationKey,
-        numAnalysts: g(fd, "numberOfAnalystOpinions"),
-        analystBuy: rt.strongBuy != null ? (rt.strongBuy + (rt.buy || 0)) : undefined,
-        analystHold: rt.hold,
-        analystSell: rt.sell != null ? (rt.sell + (rt.strongSell || 0)) : undefined,
-      };
-    } catch (e) { lastErr = e; }
+  const apiKey = getAvKey();
+  const url = `https://www.alphavantage.co/query?function=OVERVIEW&symbol=${encodeURIComponent(ticker)}&apikey=${apiKey}`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`AV OVERVIEW HTTP ${resp.status}`);
+  const j = await resp.json();
+  checkAvError(j);
+  if (!j?.Symbol) throw new Error("OVERVIEW 데이터가 없습니다 (해외 상장 티커일 경우 지원 안 될 수 있음).");
+  const num = (v) => { const n = parseFloat(v); return isNaN(n) ? undefined : n; };
+
+  const sb = num(j.AnalystRatingStrongBuy) || 0;
+  const b = num(j.AnalystRatingBuy) || 0;
+  const h = num(j.AnalystRatingHold) || 0;
+  const s = num(j.AnalystRatingSell) || 0;
+  const ss = num(j.AnalystRatingStrongSell) || 0;
+  const total = sb + b + h + s + ss;
+  let recKey;
+  const recMean = total > 0 ? (sb * 1 + b * 2 + h * 3 + s * 4 + ss * 5) / total : undefined;
+  if (recMean != null) {
+    if (recMean <= 1.5) recKey = "strong_buy";
+    else if (recMean <= 2.5) recKey = "buy";
+    else if (recMean <= 3.5) recKey = "hold";
+    else if (recMean <= 4.5) recKey = "sell";
+    else recKey = "strong_sell";
   }
-  throw lastErr || new Error("스탯 조회 실패");
+
+  return {
+    marketCap: num(j.MarketCapitalization),
+    trailingPE: num(j.TrailingPE) ?? num(j.PERatio),
+    forwardPE: num(j.ForwardPE),
+    trailingEPS: num(j.EPS) ?? num(j.DilutedEPSTTM),
+    dividendYield: num(j.DividendYield),
+    beta: num(j.Beta),
+    targetMean: num(j.AnalystTargetPrice),
+    recommendationMean: recMean,
+    recommendationKey: recKey,
+    numAnalysts: total || undefined,
+    analystBuy: sb + b,
+    analystHold: h,
+    analystSell: s + ss,
+    fiftyTwoWeekHigh: num(j["52WeekHigh"]),
+    fiftyTwoWeekLow: num(j["52WeekLow"]),
+  };
+}
+
+function parseAVTime(s) {
+  if (!s || s.length < 15) return null;
+  return new Date(
+    parseInt(s.slice(0, 4)),
+    parseInt(s.slice(4, 6)) - 1,
+    parseInt(s.slice(6, 8)),
+    parseInt(s.slice(9, 11)),
+    parseInt(s.slice(11, 13)),
+    parseInt(s.slice(13, 15))
+  );
 }
 
 async function fetchNews(ticker) {
-  const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(ticker)}&newsCount=15&quotesCount=0&enableFuzzyQuery=false`;
-  const tryUrls = corsFallbackUrls(url);
-  let lastErr = null;
-  for (const u of tryUrls) {
-    try {
-      const resp = await fetch(u);
-      if (!resp.ok) { lastErr = new Error(`HTTP ${resp.status}`); continue; }
-      const json = await resp.json();
-      const items = (json?.news || []).map((n) => ({
-        title: String(n.title || "").trim(),
-        publisher: String(n.publisher || "").trim(),
-        link: String(n.link || "").trim(),
-        time: n.providerPublishTime ? new Date(n.providerPublishTime * 1000) : null,
-        summary: String(n.summary || "").trim(),
-      })).filter((n) => n.title);
-      return items;
-    } catch (e) { lastErr = e; }
-  }
-  throw lastErr || new Error("뉴스 조회 실패");
+  const apiKey = getAvKey();
+  const url = `https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers=${encodeURIComponent(ticker)}&limit=15&apikey=${apiKey}`;
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`AV NEWS HTTP ${resp.status}`);
+  const j = await resp.json();
+  checkAvError(j);
+  const feed = j?.feed || [];
+  return feed.map((f) => ({
+    title: String(f.title || "").trim(),
+    publisher: String(f.source || "").trim(),
+    link: String(f.url || "").trim(),
+    time: parseAVTime(f.time_published),
+    summary: String(f.summary || "").slice(0, 300).trim(),
+  })).filter((n) => n.title);
 }
 
 function formatPriceSummary(data) {
@@ -247,6 +271,9 @@ els.fetchBtn.addEventListener("click", async () => {
     }
     if (statsResult.status === "fulfilled") {
       statsData = statsResult.value;
+      // Alpha Vantage OVERVIEW carries 52w — merge into price meta
+      if (statsData?.fiftyTwoWeekHigh) priceData.meta.fiftyTwoWeekHigh = statsData.fiftyTwoWeekHigh;
+      if (statsData?.fiftyTwoWeekLow) priceData.meta.fiftyTwoWeekLow = statsData.fiftyTwoWeekLow;
     }
     renderStats(priceData, statsData, statsResult.status === "rejected" ? statsResult.reason?.message : null);
   } catch (e) {
@@ -933,6 +960,7 @@ els.analyzeBtn.addEventListener("click", async () => {
 
 // ---------- Init ----------
 loadKey();
+loadAvKey();
 els.ticker.addEventListener("keydown", (e) => {
   if (e.key === "Enter") { e.preventDefault(); els.fetchBtn.click(); }
 });

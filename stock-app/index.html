@@ -68,6 +68,22 @@
         <textarea id="news" rows="6" placeholder="자동으로 조회된 뉴스 외에 추가로 반영하고 싶은 텍스트를 붙여넣으세요 (한국어 / 영어 모두 가능)"></textarea>
       </div>
 
+      <details class="field" open>
+        <summary>데이터 소스 API 키 — Alpha Vantage <strong style="color:var(--sell)">(필수)</strong></summary>
+        <p class="hint">
+          Alpha Vantage 무료 키 필요 (이메일만, 결제정보 X, 30초):
+          <a href="https://www.alphavantage.co/support/#api-key" target="_blank" rel="noopener">여기서 발급</a>.
+          25 requests/day 무료 = 하루 약 8회 분석 가능.
+          키는 브라우저 localStorage에만 저장, Alpha Vantage 외 어디에도 전송되지 않음.
+        </p>
+        <div class="row">
+          <input id="av-key" type="password" placeholder="AV API key" autocomplete="off" />
+          <button id="save-av-btn" type="button" class="secondary">저장</button>
+          <button id="clear-av-btn" type="button" class="secondary">삭제</button>
+        </div>
+        <p class="hint" id="av-key-status"></p>
+      </details>
+
       <details class="field">
         <summary>고급 설정 — Claude API 키 (선택)</summary>
         <p class="hint">
