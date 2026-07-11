@@ -142,6 +142,68 @@
       <button id="analyze-btn" type="button" class="primary big">분석하기</button>
     </section>
 
+    <section class="card monitor-card" id="monitor-section">
+      <h2>🤖 자동 감시 (가라 매매 / Paper Trading)</h2>
+
+      <div class="port-summary">
+        <div class="port-stat"><div class="port-label">현금</div><div class="port-value" id="port-cash">$10,000.00</div></div>
+        <div class="port-stat"><div class="port-label">보유 자산</div><div class="port-value" id="port-holdings-value">$0.00</div></div>
+        <div class="port-stat"><div class="port-label">총 자산</div><div class="port-value" id="port-total">$10,000.00</div></div>
+        <div class="port-stat"><div class="port-label">총 손익</div><div class="port-value" id="port-pnl">+0.00%</div></div>
+      </div>
+
+      <div class="field">
+        <label>보유 종목</label>
+        <div id="port-holdings-table" class="holdings-table"><p class="hint" style="margin:6px 0">아직 보유 종목이 없습니다.</p></div>
+      </div>
+
+      <div class="field">
+        <label for="monitor-tickers">감시 티커 (쉼표 구분)</label>
+        <input id="monitor-tickers" type="text" placeholder="AAPL, MSFT, NVDA" autocomplete="off" />
+      </div>
+
+      <div class="row">
+        <div style="flex: 1 1 100px; min-width: 0">
+          <label class="sublabel" for="monitor-interval">감시 간격</label>
+          <select id="monitor-interval">
+            <option value="15">15분</option>
+            <option value="30">30분</option>
+            <option value="60" selected>1시간</option>
+            <option value="120">2시간</option>
+            <option value="180">3시간</option>
+            <option value="360">6시간</option>
+          </select>
+        </div>
+        <div style="flex: 1 1 120px; min-width: 0">
+          <label class="sublabel" for="monitor-position-size">건당 매수 금액 ($)</label>
+          <input id="monitor-position-size" type="number" value="1000" min="1" step="1" />
+        </div>
+        <div style="flex: 1 1 120px; min-width: 0">
+          <label class="sublabel" for="monitor-initial-cash">시작 자본 ($)</label>
+          <input id="monitor-initial-cash" type="number" value="10000" min="1" step="1" />
+        </div>
+      </div>
+
+      <p class="hint">
+        ⚠️ Alpha Vantage 무료 티어 = 25 requests/day. N개 티커 × 1사이클 = 약 2N requests 소비.
+        3티커 hourly는 하루 만에 한도 초과. 여유 있게 사용하려면 3티커 × 6시간 간격 = 12콜/day 권장.
+      </p>
+
+      <div class="row" style="margin-top: 8px">
+        <button id="monitor-start-btn" type="button" class="primary">감시 시작</button>
+        <button id="monitor-stop-btn" type="button" class="secondary" hidden>감시 중지</button>
+        <button id="monitor-run-once-btn" type="button" class="secondary">지금 1회 실행</button>
+        <button id="monitor-reset-btn" type="button" class="secondary">전체 초기화</button>
+      </div>
+
+      <p class="hint" id="monitor-status">감시 대기 중.</p>
+
+      <details class="field" open>
+        <summary>결정 로그 (최근 50건)</summary>
+        <div id="monitor-log" class="monitor-log"></div>
+      </details>
+    </section>
+
     <section class="card" id="result-card" hidden>
       <h2>2. 결과</h2>
 

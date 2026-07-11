@@ -630,3 +630,95 @@ details[open] summary { margin-bottom: 8px; }
   line-height: 1.55;
   color: var(--text);
 }
+
+/* ========================================================
+   Auto Monitor / Paper Trading section
+   ======================================================== */
+.monitor-card { border-color: var(--accent); }
+.port-summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+@media (max-width: 640px) {
+  .port-summary { grid-template-columns: repeat(2, 1fr); }
+}
+.port-stat {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  text-align: center;
+}
+.port-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+.port-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+.port-value.up { color: var(--buy); }
+.port-value.down { color: var(--sell); }
+
+.holdings-table {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px;
+  overflow-x: auto;
+}
+.holdings-table-inner,
+.log-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.holdings-table-inner th,
+.log-table th {
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 8px 6px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.holdings-table-inner td,
+.log-table td {
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.holdings-table-inner tr:last-child td,
+.log-table tr:last-child td {
+  border-bottom: none;
+}
+.holdings-table-inner .up,
+.log-table .up { color: var(--buy); font-weight: 600; }
+.holdings-table-inner .down,
+.log-table .down { color: var(--sell); font-weight: 600; }
+.log-table .log-act.up { color: var(--buy); }
+.log-table .log-act.down { color: var(--sell); }
+.log-table .log-act.err { color: var(--sell); font-weight: 600; }
+.log-table .log-act.muted { color: var(--muted); }
+.log-table .log-sig-buy { color: var(--buy); font-weight: 600; }
+.log-table .log-sig-sell { color: var(--sell); font-weight: 600; }
+.log-table .log-sig-hold { color: var(--hold); font-weight: 600; }
+.log-table .log-time { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.log-table .log-reason { color: var(--muted); font-size: 11.5px; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.monitor-log {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px;
+  max-height: 400px;
+  overflow: auto;
+}

@@ -39,6 +39,21 @@ const els = {
   positionStatus: $("position-status"),
   pnlCard: $("pnl-card"),
   pnlContent: $("pnl-content"),
+  portCash: $("port-cash"),
+  portHoldingsValue: $("port-holdings-value"),
+  portTotal: $("port-total"),
+  portPnl: $("port-pnl"),
+  portHoldingsTable: $("port-holdings-table"),
+  monitorTickers: $("monitor-tickers"),
+  monitorInterval: $("monitor-interval"),
+  monitorPositionSize: $("monitor-position-size"),
+  monitorInitialCash: $("monitor-initial-cash"),
+  monitorStartBtn: $("monitor-start-btn"),
+  monitorStopBtn: $("monitor-stop-btn"),
+  monitorRunOnceBtn: $("monitor-run-once-btn"),
+  monitorResetBtn: $("monitor-reset-btn"),
+  monitorStatus: $("monitor-status"),
+  monitorLog: $("monitor-log"),
   analyzeBtn: $("analyze-btn"),
   resultCard: $("result-card"),
   finalVerdict: $("final-verdict"),
@@ -1289,3 +1304,293 @@ function renderWatchlist(list) {
 els.ticker.addEventListener("keydown", (e) => {
   if (e.key === "Enter") { e.preventDefault(); els.fetchBtn.click(); }
 });
+
+// ============================================================
+// Auto Monitor — Paper Trading System
+// ============================================================
+const MON_STORAGE = "stocksignal.monitor";
+let monitorTimer = null;
+let monitorCycleRunning = false;
+
+function defaultMonitorState() {
+  return {
+    running: false,
+    initialCash: 10000,
+    cash: 10000,
+    holdings: {}, // {AAPL: {qty, avgPrice, lastPrice}}
+    tickers: [],
+    intervalMin: 60,
+    positionSize: 1000,
+    log: [],
+    lastRun: null,
+  };
+}
+
+function loadMonitorState() {
+  try {
+    const s = JSON.parse(localStorage.getItem(MON_STORAGE));
+    if (!s || typeof s !== "object") return defaultMonitorState();
+    return { ...defaultMonitorState(), ...s };
+  } catch (_) { return defaultMonitorState(); }
+}
+
+function saveMonitorState(s) {
+  localStorage.setItem(MON_STORAGE, JSON.stringify(s));
+}
+
+function fmtUSD(v) {
+  return "$" + (v || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function renderMonitor() {
+  const s = loadMonitorState();
+  const holdingsValue = Object.values(s.holdings).reduce(
+    (sum, h) => sum + (h.qty || 0) * (h.lastPrice || h.avgPrice || 0),
+    0
+  );
+  const total = (s.cash || 0) + holdingsValue;
+  const pnlPct = ((total - s.initialCash) / s.initialCash) * 100;
+
+  els.portCash.textContent = fmtUSD(s.cash);
+  els.portHoldingsValue.textContent = fmtUSD(holdingsValue);
+  els.portTotal.textContent = fmtUSD(total);
+  els.portPnl.textContent = (pnlPct >= 0 ? "+" : "") + pnlPct.toFixed(2) + "%";
+  els.portPnl.className = "port-value " + (pnlPct >= 0 ? "up" : "down");
+
+  // Holdings table
+  const holdingEntries = Object.entries(s.holdings);
+  if (!holdingEntries.length) {
+    els.portHoldingsTable.innerHTML = `<p class="hint" style="margin:6px 0">아직 보유 종목이 없습니다.</p>`;
+  } else {
+    els.portHoldingsTable.innerHTML = `
+      <table class="holdings-table-inner">
+        <thead><tr><th>티커</th><th>수량</th><th>평단</th><th>현재가</th><th>손익</th><th>가치</th></tr></thead>
+        <tbody>
+          ${holdingEntries.map(([t, h]) => {
+            const cur = h.lastPrice || h.avgPrice;
+            const pnlP = ((cur - h.avgPrice) / h.avgPrice) * 100;
+            const val = cur * h.qty;
+            const cls = pnlP >= 0 ? "up" : "down";
+            return `<tr>
+              <td><strong>${escapeHtml(t)}</strong></td>
+              <td>${h.qty.toFixed(4)}</td>
+              <td>${fmtUSD(h.avgPrice)}</td>
+              <td>${fmtUSD(cur)}</td>
+              <td class="${cls}">${pnlP >= 0 ? "+" : ""}${pnlP.toFixed(2)}%</td>
+              <td>${fmtUSD(val)}</td>
+            </tr>`;
+          }).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  // Log
+  const log = s.log || [];
+  if (!log.length) {
+    els.monitorLog.innerHTML = `<p class="hint" style="margin:8px 0">아직 결정 이력이 없습니다.</p>`;
+  } else {
+    els.monitorLog.innerHTML = `
+      <table class="log-table">
+        <thead><tr><th>시간</th><th>티커</th><th>신호</th><th>액션</th><th>가격</th><th>수량</th><th>근거</th></tr></thead>
+        <tbody>
+          ${log.slice(0, 50).map((r) => {
+            const dt = new Date(r.ts);
+            const time = `${dt.getMonth()+1}/${dt.getDate()} ${String(dt.getHours()).padStart(2,"0")}:${String(dt.getMinutes()).padStart(2,"0")}`;
+            const actClass = r.action === "BUY" ? "up" : (r.action === "SELL" ? "down" : (r.action === "ERROR" ? "err" : "muted"));
+            return `<tr>
+              <td class="log-time">${escapeHtml(time)}</td>
+              <td><strong>${escapeHtml(r.ticker)}</strong></td>
+              <td class="log-sig-${(r.signal||"").toLowerCase()}">${escapeHtml(r.signal || "-")}</td>
+              <td class="log-act ${actClass}">${escapeHtml(r.action)}</td>
+              <td>${r.price ? fmtUSD(r.price) : "-"}</td>
+              <td>${r.qty ? r.qty.toFixed(4) : "-"}</td>
+              <td class="log-reason">${escapeHtml((r.reason || "").slice(0, 120))}</td>
+            </tr>`;
+          }).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+
+  // Status
+  if (s.running) {
+    const nextRun = s.lastRun ? new Date(new Date(s.lastRun).getTime() + s.intervalMin * 60000) : null;
+    els.monitorStatus.innerHTML = `🟢 감시 중 · 간격: ${s.intervalMin}분 · 다음 실행: ${nextRun ? nextRun.toLocaleTimeString("ko-KR") : "잠시 후"}`;
+    els.monitorStartBtn.hidden = true;
+    els.monitorStopBtn.hidden = false;
+  } else {
+    els.monitorStatus.innerHTML = `⚪ 감시 중지됨.${s.lastRun ? " 마지막 실행: " + new Date(s.lastRun).toLocaleString("ko-KR") : ""}`;
+    els.monitorStartBtn.hidden = false;
+    els.monitorStopBtn.hidden = true;
+  }
+
+  // Sync form values
+  els.monitorTickers.value = (s.tickers || []).join(", ");
+  els.monitorInterval.value = String(s.intervalMin);
+  els.monitorPositionSize.value = s.positionSize;
+  els.monitorInitialCash.value = s.initialCash;
+}
+
+function parseTickers(str) {
+  return String(str || "")
+    .split(/[,\s]+/)
+    .map((t) => t.trim().toUpperCase())
+    .filter(Boolean)
+    .filter((t, i, arr) => arr.indexOf(t) === i);
+}
+
+function readMonitorFormIntoState() {
+  const s = loadMonitorState();
+  s.tickers = parseTickers(els.monitorTickers.value);
+  s.intervalMin = parseInt(els.monitorInterval.value) || 60;
+  s.positionSize = parseFloat(els.monitorPositionSize.value) || 1000;
+  const newInitial = parseFloat(els.monitorInitialCash.value) || 10000;
+  // Only reset cash if initial changed AND no trades yet
+  if (newInitial !== s.initialCash && !(s.log || []).length) {
+    s.initialCash = newInitial;
+    s.cash = newInitial;
+  } else {
+    s.initialCash = newInitial;
+  }
+  saveMonitorState(s);
+  return s;
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function runMonitorCycle() {
+  if (monitorCycleRunning) return;
+  monitorCycleRunning = true;
+  const s = readMonitorFormIntoState();
+  if (!s.tickers.length) {
+    els.monitorStatus.innerHTML = `<span class="error">감시할 티커가 없습니다.</span>`;
+    monitorCycleRunning = false;
+    return;
+  }
+
+  els.monitorStatus.innerHTML = `⏳ 사이클 실행 중… (${s.tickers.length}개 티커 순차 조회)`;
+
+  for (const t of s.tickers) {
+    try {
+      const pData = await fetchYahoo(t, "3mo");
+      await sleep(1400);
+      let stData = null;
+      try { stData = await fetchStats(t); } catch (_) {}
+      await sleep(1400);
+
+      const ruleResult = ruleBasedSignal(pData, "", stData);
+      const currentPrice = pData.meta.regularMarketPrice ?? pData.prices[pData.prices.length - 1].close;
+
+      // Update lastPrice on holdings
+      if (s.holdings[t]) s.holdings[t].lastPrice = currentPrice;
+
+      const holding = s.holdings[t];
+      const reasonShort = ruleResult.reasons.slice(0, 2).map((r) => String(r).replace(/\s*\([+\-]?[0-9.]+\)\s*$/, "")).join(" | ");
+
+      let action = "HOLD", qty = 0;
+      if (ruleResult.signal === "BUY" && !holding && s.cash >= 10) {
+        const budget = Math.min(s.positionSize, s.cash);
+        qty = Math.floor((budget / currentPrice) * 10000) / 10000;
+        if (qty > 0) {
+          const cost = qty * currentPrice;
+          s.cash -= cost;
+          s.holdings[t] = { qty, avgPrice: currentPrice, lastPrice: currentPrice };
+          action = "BUY";
+        }
+      } else if (ruleResult.signal === "SELL" && holding) {
+        const proceeds = holding.qty * currentPrice;
+        s.cash += proceeds;
+        qty = holding.qty;
+        delete s.holdings[t];
+        action = "SELL";
+      }
+
+      s.log.unshift({
+        ts: new Date().toISOString(),
+        ticker: t,
+        signal: ruleResult.signal,
+        action,
+        price: currentPrice,
+        qty,
+        reason: reasonShort,
+      });
+    } catch (err) {
+      s.log.unshift({
+        ts: new Date().toISOString(),
+        ticker: t,
+        signal: "",
+        action: "ERROR",
+        price: 0,
+        qty: 0,
+        reason: (err.message || "unknown").slice(0, 200),
+      });
+    }
+    await sleep(500);
+  }
+
+  s.log = s.log.slice(0, 200);
+  s.lastRun = new Date().toISOString();
+  saveMonitorState(s);
+  renderMonitor();
+  monitorCycleRunning = false;
+}
+
+function startMonitor() {
+  const s = readMonitorFormIntoState();
+  if (!s.tickers.length) {
+    els.monitorStatus.innerHTML = `<span class="error">감시할 티커를 먼저 입력하세요.</span>`;
+    return;
+  }
+  if (!localStorage.getItem("stocksignal.avKey")) {
+    els.monitorStatus.innerHTML = `<span class="error">Alpha Vantage API 키가 필요합니다.</span>`;
+    return;
+  }
+  s.running = true;
+  saveMonitorState(s);
+  renderMonitor();
+  runMonitorCycle();
+  if (monitorTimer) clearInterval(monitorTimer);
+  monitorTimer = setInterval(runMonitorCycle, s.intervalMin * 60 * 1000);
+}
+
+function stopMonitor() {
+  const s = loadMonitorState();
+  s.running = false;
+  saveMonitorState(s);
+  if (monitorTimer) { clearInterval(monitorTimer); monitorTimer = null; }
+  renderMonitor();
+}
+
+function resetMonitor() {
+  if (!confirm("포트폴리오, 결정 로그 전체를 초기화합니다. 진행할까요?")) return;
+  if (monitorTimer) { clearInterval(monitorTimer); monitorTimer = null; }
+  const fresh = defaultMonitorState();
+  fresh.initialCash = parseFloat(els.monitorInitialCash.value) || 10000;
+  fresh.cash = fresh.initialCash;
+  fresh.positionSize = parseFloat(els.monitorPositionSize.value) || 1000;
+  fresh.intervalMin = parseInt(els.monitorInterval.value) || 60;
+  fresh.tickers = parseTickers(els.monitorTickers.value);
+  saveMonitorState(fresh);
+  renderMonitor();
+}
+
+els.monitorStartBtn.addEventListener("click", startMonitor);
+els.monitorStopBtn.addEventListener("click", stopMonitor);
+els.monitorRunOnceBtn.addEventListener("click", () => { readMonitorFormIntoState(); runMonitorCycle(); });
+els.monitorResetBtn.addEventListener("click", resetMonitor);
+[els.monitorTickers, els.monitorInterval, els.monitorPositionSize, els.monitorInitialCash].forEach((el) => {
+  el.addEventListener("change", readMonitorFormIntoState);
+});
+
+// Resume monitor on page load if it was running
+(function initMonitor() {
+  renderMonitor();
+  const s = loadMonitorState();
+  if (s.running) {
+    // Restart timer (page reload lost the interval)
+    if (monitorTimer) clearInterval(monitorTimer);
+    monitorTimer = setInterval(runMonitorCycle, s.intervalMin * 60 * 1000);
+    els.monitorStatus.innerHTML = `🟢 감시 재개 (페이지 재접속). 다음 실행까지 최대 ${s.intervalMin}분.`;
+  }
+})();
